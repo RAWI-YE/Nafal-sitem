@@ -1,6 +1,6 @@
-import { initializeApp, getApps, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { 
-  getFirestore, collection, doc, setDoc, getDoc, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy 
+  initializeFirestore, getFirestore, collection, doc, setDoc, getDoc, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy 
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 // 1. المفاتيح الافتراضية الخاصة بك (أبو تركي)
@@ -16,10 +16,16 @@ const DEFAULT_FIREBASE_CONFIG = {
 
 const DEFAULT_IMGBB_KEY = "0fbdc2c45d1d7098137c923129bd25b7";
 
-// جلب الإعدادات المحفوظة محلياً أو استخدام الافتراضية
+// صورة قهوة مختصة افتراضية في حال لم يرفع المستخدم صورة
+const DEFAULT_COFFEE_IMG = "https://images.unsplash.com/photo-1559056199-641a0ac8b55e?auto=format&fit=crop&w=800&q=80";
+
 function getStoredFirebaseConfig() {
-  const saved = localStorage.getItem("nafal_fb_config");
-  return saved ? JSON.parse(saved) : DEFAULT_FIREBASE_CONFIG;
+  try {
+    const saved = localStorage.getItem("nafal_fb_config");
+    return saved ? JSON.parse(saved) : DEFAULT_FIREBASE_CONFIG;
+  } catch {
+    return DEFAULT_FIREBASE_CONFIG;
+  }
 }
 
 function getStoredImgbbKey() {
@@ -30,38 +36,89 @@ let db = null;
 let currentCategories = ["محاصيل مختصة", "أدوات قهوة", "بكجات نفال"];
 let allOrders = [];
 
-// 2. تهيئة الاتصال بفايربيس
-async function initFirebaseConnection() {
+// إشعار عائم زجاجي
+function showToast(msg) {
+  const toast = document.getElementById("toast");
+  document.getElementById("toastText").textContent = msg;
+  toast.classList.remove("hidden");
+  setTimeout(() => toast.classList.add("hidden"), 3500);
+}
+
+// 2. نظام التشخيص الذكي لأخطاء قاعدة البيانات
+function handleFirebaseError(err, contextText = "") {
+  console.error(`Firebase Error [${contextText}]:`, err);
+  const dot = document.getElementById("dbStatusDot");
+  const statusText = document.getElementById("dbStatusText");
+  const diagBox = document.getElementById("diagnosticAlert");
+  const diagTitle = document.getElementById("diagTitle");
+  const diagDesc = document.getElementById("diagDesc");
+
+  dot.classList.remove("online");
+  dot.classList.add("error");
+
+  const code = err.code || "";
+  if (code.includes("permission-denied")) {
+    statusText.textContent = "القاعدة مقفلة (Permission Denied)";
+    diagTitle.textContent = "تم اكتشاف السبب: قواعد الأمان (Rules) في فايربيس مغلقة!";
+    diagDesc.textContent = "قاعدة بياناتك متصلة وموجودة، لكن فايربيس ترفض حفظ المنتج لأن القواعد (Rules) موضوعة على وضع القفل. انسخ الكود بالأسفل وضعه في حسابك بفايربيس (Firestore Database -> Rules) واضغط Publish وسيعمل الحفظ فوراً.";
+    diagBox.classList.remove("hidden");
+    showToast("يرجى فتح صلاحيات القاعدة (Rules) في فايربيس");
+  } else if (code.includes("not-found") || (err.message && err.message.includes("database (default) does not exist"))) {
+    statusText.textContent = "لم يتم إنشاء Firestore بعد";
+    diagTitle.textContent = "تم اكتشاف السبب: لم تقم بإنشاء Firestore Database داخل مشروعك!";
+    diagDesc.textContent = "ادخل إلى مشروعك (rawi-ye02) في موقع Firebase، ثم من القائمة الجانبية اختر Build ثم Firestore Database واضغط Create Database واختر Start in test mode.";
+    diagBox.classList.remove("hidden");
+    showToast("يرجى الضغط على Create Database في فايربيس");
+  } else {
+    statusText.textContent = `تنبيه اتصال (${code || "تحقق من الإنترنت"})`;
+    showToast(`خطأ أثناء ${contextText}: ${err.message || code}`);
+  }
+}
+
+// 3. تهيئة الاتصال بفايربيس مع تفعيل Long Polling لمنع التعليق
+function initFirebaseConnection() {
   try {
     const config = getStoredFirebaseConfig();
-    if (getApps().length > 0) {
-      await deleteApp(getApps()[0]);
+    let app;
+    if (getApps().length === 0) {
+      app = initializeApp(config);
+      db = initializeFirestore(app, { experimentalForceLongPolling: true });
+    } else {
+      app = getApps()[0];
+      db = getFirestore(app);
     }
-    const app = initializeApp(config);
-    db = getFirestore(app);
 
+    document.getElementById("dbStatusDot").classList.remove("error");
     document.getElementById("dbStatusDot").classList.add("online");
-    document.getElementById("dbStatusText").textContent = `متصل بقاعدة: ${config.projectId}`;
+    document.getElementById("dbStatusText").textContent = `متصل بـ ${config.projectId}`;
 
     loadSettingsAndOffers();
     listenToProducts();
     listenToOrders();
   } catch (error) {
-    console.error("Firebase Init Error:", error);
-    document.getElementById("dbStatusDot").classList.remove("online");
-    document.getElementById("dbStatusText").textContent = "خطأ في الاتصال بالقاعدة";
+    handleFirebaseError(error, "تهيئة القاعدة");
   }
 }
 
-// إشعار سريع
-function showToast(msg) {
-  const toast = document.getElementById("toast");
-  toast.textContent = msg;
-  toast.classList.remove("hidden");
-  setTimeout(() => toast.classList.add("hidden"), 3000);
-}
+// زر فحص الاتصال المباشر بقاعدة البيانات
+document.getElementById("testDbBtn").addEventListener("click", async () => {
+  showToast("جاري اختبار الكتابة والقراءة في القاعدة...");
+  try {
+    await setDoc(doc(db, "nafal_settings", "connectionTest"), {
+      testedAt: Date.now(),
+      status: "ok"
+    });
+    document.getElementById("diagnosticAlert").classList.add("hidden");
+    document.getElementById("dbStatusDot").classList.remove("error");
+    document.getElementById("dbStatusDot").classList.add("online");
+    document.getElementById("dbStatusText").textContent = "القاعدة تعمل 100% (قراءة وكتابة)";
+    showToast("ممتاز! قاعدة البيانات متصلة وتقبل الحفظ بنجاح");
+  } catch (err) {
+    handleFirebaseError(err, "فحص القاعدة");
+  }
+});
 
-// 3. التنقل بين التبويبات
+// 4. التنقل بين التبويبات
 document.querySelectorAll(".nav-btn").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove("active"));
@@ -71,8 +128,8 @@ document.querySelectorAll(".nav-btn").forEach(btn => {
   });
 });
 
-// 4. ضغط الصورة بالمتصفح ورفعها إلى ImgBB تلقائياً
-function compressImage(file, maxWidth = 800, quality = 0.8) {
+// 5. ضغط الصور ورفعها إلى ImgBB
+function compressImage(file, maxWidth = 800, quality = 0.82) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
@@ -95,8 +152,7 @@ function compressImage(file, maxWidth = 800, quality = 0.8) {
         ctx.drawImage(img, 0, 0, width, height);
 
         const dataUrl = canvas.toDataURL("image/jpeg", quality);
-        const base64 = dataUrl.split(",")[1];
-        resolve(base64);
+        resolve(dataUrl.split(",")[1]);
       };
       img.onerror = err => reject(err);
     };
@@ -109,7 +165,7 @@ document.getElementById("prodImageFile").addEventListener("change", async (e) =>
   if (!file) return;
 
   const statusEl = document.getElementById("uploadStatus");
-  statusEl.textContent = "⏳ جاري ضغط الصورة ورفعها...";
+  statusEl.textContent = "جاري ضغط الصورة ورفعها الآن...";
 
   try {
     const base64Image = await compressImage(file);
@@ -129,32 +185,37 @@ document.getElementById("prodImageFile").addEventListener("change", async (e) =>
       const preview = document.getElementById("prodImagePreview");
       preview.src = imageUrl;
       preview.classList.remove("hidden");
-      statusEl.textContent = "✅ تم ضغط ورفع الصورة بنجاح!";
-      showToast("تم رفع الصورة وحفظ الرابط");
+      statusEl.textContent = "تم ضغط ورفع الصورة بنجاح";
+      showToast("تم رفع الصورة وتجهيز الرابط");
     } else {
-      statusEl.textContent = "❌ فشل الرفع، تأكد من مفتاح ImgBB";
+      statusEl.textContent = "تعذر الرفع، تحقق من مفتاح ImgBB أو ضع رابطاً يدوياً";
     }
   } catch (err) {
     console.error(err);
-    statusEl.textContent = "❌ حدث خطأ أثناء ضغط أو رفع الصورة";
+    statusEl.textContent = "حدث خطأ أثناء رفع الصورة";
   }
 });
 
-// 5. إدارة المنتجات (إضافة / تعديل / حذف)
+// 6. حفظ وتعديل المنتجات (بدون أخطاء أو تعليق)
 document.getElementById("productForm").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const editId = document.getElementById("editProductId").value;
+  const saveBtn = document.getElementById("saveProductBtn");
+  const editId = document.getElementById("editProductId").value.trim();
 
+  const rawImageUrl = document.getElementById("prodImageUrl").value.trim();
   const productData = {
     name: document.getElementById("prodName").value.trim(),
-    category: document.getElementById("prodCategory").value,
-    price: Number(document.getElementById("prodPrice").value),
-    stock: Number(document.getElementById("prodStock").value),
+    category: document.getElementById("prodCategory").value || "محاصيل مختصة",
+    price: Number(document.getElementById("prodPrice").value) || 0,
+    stock: Number(document.getElementById("prodStock").value) || 0,
     description: document.getElementById("prodDesc").value.trim(),
-    imageUrl: document.getElementById("prodImageUrl").value.trim(),
+    imageUrl: rawImageUrl || DEFAULT_COFFEE_IMG,
     freeDelivery: document.getElementById("prodFreeDelivery").checked,
     updatedAt: Date.now()
   };
+
+  saveBtn.disabled = true;
+  saveBtn.innerHTML = `<i class="ri-loader-4-line spin-icon"></i><span>جاري الحفظ في القاعدة...</span>`;
 
   try {
     if (editId) {
@@ -165,10 +226,13 @@ document.getElementById("productForm").addEventListener("submit", async (e) => {
       await addDoc(collection(db, "nafal_products"), productData);
       showToast("تمت إضافة المنتج للمتجر بنجاح");
     }
+    document.getElementById("diagnosticAlert").classList.add("hidden");
     resetProductForm();
   } catch (err) {
-    console.error(err);
-    showToast("حدث خطأ أثناء حفظ المنتج");
+    handleFirebaseError(err, "حفظ المنتج");
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.innerHTML = `<i class="ri-save-3-line"></i><span>حفظ المنتج في قاعدة البيانات</span>`;
   }
 });
 
@@ -176,8 +240,8 @@ function resetProductForm() {
   document.getElementById("productForm").reset();
   document.getElementById("editProductId").value = "";
   document.getElementById("prodImagePreview").classList.add("hidden");
-  document.getElementById("uploadStatus").textContent = "اختر صورة من جهازك ليتم ضغطها ورفعها فوراً";
-  document.getElementById("saveProductBtn").textContent = "حفظ المنتج في القاعدة";
+  document.getElementById("uploadStatus").textContent = "اضغط هنا لاختيار صورة من جهازك (يتم ضغطها ورفعها فوراً)";
+  document.getElementById("saveProductBtn").innerHTML = `<i class="ri-save-3-line"></i><span>حفظ المنتج في قاعدة البيانات</span>`;
 }
 
 document.getElementById("resetProductFormBtn").addEventListener("click", resetProductForm);
@@ -189,7 +253,12 @@ function listenToProducts() {
     container.innerHTML = "";
 
     if (snapshot.empty) {
-      container.innerHTML = `<p class="hint-text">لا توجد منتجات مضافة حالياً. أضف أول محصول من الأعلى.</p>`;
+      container.innerHTML = `
+        <div class="empty-box glass-panel">
+          <i class="ri-cup-line"></i>
+          <span>لا توجد منتجات مضافة حالياً. أضف أول محصول من النموذج أعلاه.</span>
+        </div>
+      `;
       return;
     }
 
@@ -199,17 +268,21 @@ function listenToProducts() {
       const card = document.createElement("div");
       card.className = "product-card";
       card.innerHTML = `
-        <img src="${p.imageUrl}" alt="${p.name}">
+        <img src="${p.imageUrl || DEFAULT_COFFEE_IMG}" alt="${p.name}">
         <div class="product-card-body">
           <div class="product-card-title">${p.name}</div>
-          <div class="hint-text">${p.category} | المخزون: ${p.stock}</div>
+          <div style="font-size:0.84rem; color:var(--text-secondary);">${p.category} | المخزون: ${p.stock}</div>
           <div class="product-card-meta">
             <span>${p.price} ريال</span>
-            <span>${p.freeDelivery ? "🚚 معفي من التوصيل" : ""}</span>
+            <span>${p.freeDelivery ? "معفي من التوصيل" : ""}</span>
           </div>
           <div class="product-card-actions">
-            <button class="btn-secondary edit-btn" style="flex:1">تعديل</button>
-            <button class="btn-danger del-btn">حذف</button>
+            <button type="button" class="btn-glass edit-btn" style="flex:1; justify-content:center;">
+              <i class="ri-edit-line"></i><span>تعديل</span>
+            </button>
+            <button type="button" class="btn-danger-glass del-btn">
+              <i class="ri-delete-bin-line"></i>
+            </button>
           </div>
         </div>
       `;
@@ -221,28 +294,34 @@ function listenToProducts() {
         document.getElementById("prodPrice").value = p.price;
         document.getElementById("prodStock").value = p.stock;
         document.getElementById("prodDesc").value = p.description || "";
-        document.getElementById("prodImageUrl").value = p.imageUrl;
+        document.getElementById("prodImageUrl").value = p.imageUrl || "";
         document.getElementById("prodFreeDelivery").checked = !!p.freeDelivery;
         const preview = document.getElementById("prodImagePreview");
-        preview.src = p.imageUrl;
+        preview.src = p.imageUrl || DEFAULT_COFFEE_IMG;
         preview.classList.remove("hidden");
-        document.getElementById("saveProductBtn").textContent = "تحديث المنتج";
+        document.getElementById("saveProductBtn").innerHTML = `<i class="ri-check-line"></i><span>تحديث بيانات المنتج</span>`;
         window.scrollTo({ top: 0, behavior: "smooth" });
       });
 
       card.querySelector(".del-btn").addEventListener("click", async () => {
         if (confirm(`هل أنت متأكد من حذف "${p.name}"؟`)) {
-          await deleteDoc(doc(db, "nafal_products", id));
-          showToast("تم حذف المنتج");
+          try {
+            await deleteDoc(doc(db, "nafal_products", id));
+            showToast("تم حذف المنتج");
+          } catch (err) {
+            handleFirebaseError(err, "حذف المنتج");
+          }
         }
       });
 
       container.appendChild(card);
     });
+  }, (err) => {
+    handleFirebaseError(err, "قراءة المنتجات");
   });
 }
 
-// 6. إدارة الإعدادات العامة، العروض، التوصيل، والأقسام
+// 7. إدارة الإعدادات، العروض، التوصيل، والأقسام
 async function loadSettingsAndOffers() {
   try {
     const docRef = doc(db, "nafal_settings", "storeConfig");
@@ -250,8 +329,7 @@ async function loadSettingsAndOffers() {
 
     if (snap.exists()) {
       const data = snap.data();
-      // تعبئة العروض والتوصيل
-      document.getElementById("bannerText").value = data.bannerText || "المتجر يوصل لداخل شرورة فقط 🚚";
+      document.getElementById("bannerText").value = data.bannerText || "المتجر يوصل لداخل شرورة فقط";
       document.getElementById("promoMessage").value = data.promoMessage || "اطلب بـ 100 ريال والتوصيل بـ 5 ريال! وعند الطلب بـ 300 ريال التوصيل مجاني!";
       document.getElementById("baseDeliveryFee").value = data.baseDeliveryFee ?? 15;
       document.getElementById("enableSmartOffers").checked = data.enableSmartOffers ?? true;
@@ -260,22 +338,19 @@ async function loadSettingsAndOffers() {
       document.getElementById("tier2Threshold").value = data.tier2Threshold ?? 300;
       document.getElementById("tier2Fee").value = data.tier2Fee ?? 0;
 
-      // تعبئة التواصل
-      document.getElementById("storeNameInput").value = data.storeName || "NAFAL Specialty Roast | نفال للقهوة المختصة";
+      document.getElementById("storeNameInput").value = data.storeName || "NAFAL Specialty Roast";
       document.getElementById("whatsappNumberInput").value = data.whatsappNumber || "";
       document.getElementById("snapchatUrlInput").value = data.snapchatUrl || "";
       document.getElementById("tiktokUrlInput").value = data.tiktokUrl || "";
 
-      // تعبئة الأقسام
       if (Array.isArray(data.categories) && data.categories.length > 0) {
         currentCategories = data.categories;
       }
       renderCategories();
     } else {
-      // إنشاء إعدادات افتراضية أول مرة في القاعدة
       await setDoc(docRef, {
-        storeName: "NAFAL Specialty Roast | نفال للقهوة المختصة",
-        bannerText: "المتجر يوصل لداخل شرورة فقط 🚚",
+        storeName: "NAFAL Specialty Roast",
+        bannerText: "المتجر يوصل لداخل شرورة فقط",
         promoMessage: "اطلب بـ 100 ريال والتوصيل بـ 5 ريال! وعند الطلب بـ 300 ريال التوصيل مجاني!",
         baseDeliveryFee: 15,
         enableSmartOffers: true,
@@ -291,7 +366,7 @@ async function loadSettingsAndOffers() {
       renderCategories();
     }
   } catch (err) {
-    console.error("Load Settings Error:", err);
+    handleFirebaseError(err, "تحميل الإعدادات");
   }
 }
 
@@ -301,17 +376,16 @@ document.getElementById("offersForm").addEventListener("submit", async (e) => {
     await setDoc(doc(db, "nafal_settings", "storeConfig"), {
       bannerText: document.getElementById("bannerText").value.trim(),
       promoMessage: document.getElementById("promoMessage").value.trim(),
-      baseDeliveryFee: Number(document.getElementById("baseDeliveryFee").value),
+      baseDeliveryFee: Number(document.getElementById("baseDeliveryFee").value) || 0,
       enableSmartOffers: document.getElementById("enableSmartOffers").checked,
-      tier1Threshold: Number(document.getElementById("tier1Threshold").value),
-      tier1Fee: Number(document.getElementById("tier1Fee").value),
-      tier2Threshold: Number(document.getElementById("tier2Threshold").value),
-      tier2Fee: Number(document.getElementById("tier2Fee").value)
+      tier1Threshold: Number(document.getElementById("tier1Threshold").value) || 100,
+      tier1Fee: Number(document.getElementById("tier1Fee").value) || 0,
+      tier2Threshold: Number(document.getElementById("tier2Threshold").value) || 300,
+      tier2Fee: Number(document.getElementById("tier2Fee").value) || 0
     }, { merge: true });
     showToast("تم حفظ إعدادات التوصيل والعروض والشريط العلوي");
   } catch (err) {
-    console.error(err);
-    showToast("خطأ في حفظ العروض");
+    handleFirebaseError(err, "حفظ العروض");
   }
 });
 
@@ -326,12 +400,11 @@ document.getElementById("contactSettingsForm").addEventListener("submit", async 
     }, { merge: true });
     showToast("تم حفظ رقم الواتساب وحسابات التواصل");
   } catch (err) {
-    console.error(err);
-    showToast("خطأ في حفظ الإعدادات");
+    handleFirebaseError(err, "حفظ بيانات التواصل");
   }
 });
 
-// 7. إدارة الأقسام
+// 8. إدارة الأقسام
 function renderCategories() {
   const select = document.getElementById("prodCategory");
   const list = document.getElementById("categoriesList");
@@ -345,16 +418,22 @@ function renderCategories() {
     select.appendChild(opt);
 
     const li = document.createElement("li");
-    li.className = "cat-item";
+    li.className = "cat-item glass-inset";
     li.innerHTML = `
-      <span>${cat}</span>
-      <button class="btn-danger" data-index="${index}">حذف</button>
+      <span><i class="ri-price-tag-3-line" style="color:var(--caramel); margin-left:6px;"></i>${cat}</span>
+      <button type="button" class="btn-danger-glass" data-index="${index}">
+        <i class="ri-delete-bin-line"></i><span>حذف</span>
+      </button>
     `;
     li.querySelector("button").addEventListener("click", async () => {
       currentCategories.splice(index, 1);
-      await setDoc(doc(db, "nafal_settings", "storeConfig"), { categories: currentCategories }, { merge: true });
-      renderCategories();
-      showToast("تم حذف القسم");
+      try {
+        await setDoc(doc(db, "nafal_settings", "storeConfig"), { categories: currentCategories }, { merge: true });
+        renderCategories();
+        showToast("تم حذف القسم");
+      } catch (err) {
+        handleFirebaseError(err, "حذف القسم");
+      }
     });
     list.appendChild(li);
   });
@@ -366,14 +445,18 @@ document.getElementById("addCategoryBtn").addEventListener("click", async () => 
   if (!val) return;
   if (!currentCategories.includes(val)) {
     currentCategories.push(val);
-    await setDoc(doc(db, "nafal_settings", "storeConfig"), { categories: currentCategories }, { merge: true });
-    renderCategories();
-    input.value = "";
-    showToast("تمت إضافة القسم");
+    try {
+      await setDoc(doc(db, "nafal_settings", "storeConfig"), { categories: currentCategories }, { merge: true });
+      renderCategories();
+      input.value = "";
+      showToast("تمت إضافة القسم بنجاح");
+    } catch (err) {
+      handleFirebaseError(err, "إضافة قسم");
+    }
   }
 });
 
-// 8. متابعة الفواتير والطلبات المباشرة وتحديث حالتها للعميل
+// 9. متابعة الفواتير والطلبات المباشرة
 function listenToOrders() {
   const q = query(collection(db, "nafal_orders"), orderBy("createdAt", "desc"));
   onSnapshot(q, (snapshot) => {
@@ -383,6 +466,8 @@ function listenToOrders() {
     });
     document.getElementById("ordersBadge").textContent = allOrders.filter(o => o.status === "جديد - قيد المراجعة").length;
     renderOrders();
+  }, (err) => {
+    handleFirebaseError(err, "قراءة الطلبات");
   });
 }
 
@@ -396,16 +481,23 @@ function renderOrders() {
   const filtered = filter === "all" ? allOrders : allOrders.filter(o => o.status === filter);
 
   if (filtered.length === 0) {
-    container.innerHTML = `<p class="hint-text">لا توجد فواتير مطابقة حالياً.</p>`;
+    container.innerHTML = `
+      <div class="empty-box glass-panel">
+        <i class="ri-inbox-2-line"></i>
+        <span>لا توجد فواتير مطابقة حالياً</span>
+      </div>
+    `;
     return;
   }
 
   filtered.forEach(order => {
     const card = document.createElement("div");
-    card.className = "order-card";
+    card.className = "order-card glass-panel";
 
     const itemsHtml = (order.items || []).map(i => `• ${i.name} (${i.qty} × ${i.price} ريال)`).join("<br>");
-    const mapLink = order.gpsLocation ? `<a href="${order.gpsLocation}" target="_blank" class="map-link">📍 فتح موقع العميل (GPS) على الخريطة</a>` : "لم يحدد رابط GPS";
+    const mapLink = order.gpsLocation 
+      ? `<a href="${order.gpsLocation}" target="_blank" class="map-link"><i class="ri-map-pin-line"></i> فتح موقع العميل (GPS) على الخريطة</a>` 
+      : "لم يحدد رابط GPS";
 
     const statusOptions = [
       "جديد - قيد المراجعة",
@@ -417,46 +509,56 @@ function renderOrders() {
 
     const customerPhone = (order.customerPhone || "").replace(/[^0-9]/g, "");
     const waUpdateMsg = encodeURIComponent(
-      `مرحباً ${order.customerName} ☕\nتحديث بخصوص فاتورتك رقم (#${order.invoiceNumber}) في متجر نفال للقهوة المختصة:\nالحالة الحالية: *${order.status}*\nإجمالي الفاتورة: ${order.totalAmount} ريال.`
+      `مرحباً ${order.customerName}\nتحديث بخصوص فاتورتك رقم (#${order.invoiceNumber}) في متجر نفال للقهوة المختصة:\nالحالة الحالية: *${order.status}*\nإجمالي الفاتورة: ${order.totalAmount} ريال.`
     );
 
     card.innerHTML = `
       <div class="order-header">
-        <span class="invoice-id">فاتورة #${order.invoiceNumber}</span>
-        <span class="hint-text">${new Date(order.createdAt).toLocaleString("ar-SA")}</span>
+        <span class="invoice-id"><i class="ri-receipt-line" style="color:var(--caramel);"></i> فاتورة #${order.invoiceNumber}</span>
+        <span style="font-size:0.8rem; color:var(--text-secondary);">${new Date(order.createdAt).toLocaleString("ar-SA")}</span>
       </div>
-      <div>
+      <div style="font-size:0.92rem; line-height:1.6;">
         <strong>العميل:</strong> ${order.customerName}<br>
         <strong>الجوال:</strong> ${order.customerPhone}<br>
-        <strong>العنوان/ملاحظة:</strong> ${order.customerAddress || "داخل شرورة"}<br>
+        <strong>العنوان:</strong> ${order.customerAddress || "داخل شرورة"}<br>
         ${mapLink}
       </div>
-      <div class="order-items-list">${itemsHtml}</div>
+      <div class="order-items-list glass-inset">${itemsHtml}</div>
       <div class="order-totals">
         <span>التوصيل: ${order.deliveryFee} ريال</span>
         <span>الإجمالي: ${order.totalAmount} ريال</span>
       </div>
-      <div class="order-actions">
-        <label class="hint-text">تحديث حالة الفاتورة (تظهر للعميل فوراً):</label>
-        <select class="status-select">${statusOptions}</select>
-        <a href="https://wa.me/${customerPhone}?text=${waUpdateMsg}" target="_blank" class="whatsapp-btn">💬 إشعار العميل عبر واتساب</a>
+      <div style="display:flex; flex-direction:column; gap:8px; margin-top:4px;">
+        <label style="font-size:0.82rem; font-weight:700; color:var(--roast-brown);">تحديث حالة الفاتورة (تظهر للعميل فوراً):</label>
+        <div class="input-glass-wrap">
+          <i class="ri-refresh-line"></i>
+          <select class="status-select">${statusOptions}</select>
+        </div>
+        <a href="https://wa.me/${customerPhone}?text=${waUpdateMsg}" target="_blank" class="whatsapp-btn">
+          <i class="ri-whatsapp-line"></i>
+          <span>إشعار العميل عبر واتساب</span>
+        </a>
       </div>
     `;
 
     card.querySelector(".status-select").addEventListener("change", async (e) => {
       const newStatus = e.target.value;
-      await updateDoc(doc(db, "nafal_orders", order.id), {
-        status: newStatus,
-        updatedAt: Date.now()
-      });
-      showToast(`تم تحديث الفاتورة #${order.invoiceNumber} إلى: ${newStatus}`);
+      try {
+        await updateDoc(doc(db, "nafal_orders", order.id), {
+          status: newStatus,
+          updatedAt: Date.now()
+        });
+        showToast(`تم تحديث الفاتورة #${order.invoiceNumber} إلى: ${newStatus}`);
+      } catch (err) {
+        handleFirebaseError(err, "تحديث حالة الفاتورة");
+      }
     });
 
     container.appendChild(card);
   });
 }
 
-// 9. إدارة مفاتيح Firebase و ImgBB وتوليد الكود تلقائياً
+// 10. إدارة مفاتيح Firebase و ImgBB وتوليد الكود
 function populateKeysForm() {
   const fb = getStoredFirebaseConfig();
   document.getElementById("imgbbKeyInput").value = getStoredImgbbKey();
@@ -474,7 +576,7 @@ function updateGeneratedCodeBox(fbConfig) {
   document.getElementById("generatedFirebaseCode").value = code;
 }
 
-document.getElementById("keysConfigForm").addEventListener("submit", async (e) => {
+document.getElementById("keysConfigForm").addEventListener("submit", (e) => {
   e.preventDefault();
   const newFbConfig = {
     apiKey: document.getElementById("fbApiKey").value.trim(),
@@ -490,18 +592,17 @@ document.getElementById("keysConfigForm").addEventListener("submit", async (e) =
   localStorage.setItem("nafal_imgbb_key", newImgbbKey);
 
   updateGeneratedCodeBox(newFbConfig);
-  await initFirebaseConnection();
-  showToast("تم تحديث المفاتيح وإعادة ربط قاعدة البيانات بنجاح!");
+  showToast("تم حفظ المفاتيح، جاري إعادة تشغيل الاتصال...");
+  setTimeout(() => window.location.reload(), 800);
 });
 
-document.getElementById("resetDefaultKeysBtn").addEventListener("click", async () => {
+document.getElementById("resetDefaultKeysBtn").addEventListener("click", () => {
   localStorage.removeItem("nafal_fb_config");
   localStorage.removeItem("nafal_imgbb_key");
-  populateKeysForm();
-  await initFirebaseConnection();
-  showToast("تمت استعادة مفاتيحك الافتراضية");
+  showToast("تمت استعادة مفاتيحك الافتراضية، جاري التحديث...");
+  setTimeout(() => window.location.reload(), 800);
 });
 
-// تشغيل النظام عند فتح الصفحة
+// تشغيل غرفة العمليات
 populateKeysForm();
 initFirebaseConnection();

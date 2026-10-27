@@ -4,46 +4,108 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>غرفة العمليات | NAFAL Specialty Roast</title>
-  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/remixicon@4.3.0/fonts/remixicon.css" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-  <!-- الشريط العلوي -->
-  <header class="top-bar">
-    <div class="brand">
-      <div class="brand-logo">☕</div>
-      <div>
-        <h1>NAFAL <span>Specialty Roast</span></h1>
-        <p>غرفة العمليات وإدارة المتجر - شرورة</p>
+  <!-- خلفية الإضاءة المحيطية (Apple Spatial Glass) -->
+  <div class="ambient-bg">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+  </div>
+
+  <!-- الشريط العلوي الزجاجي -->
+  <header class="top-header">
+    <div class="container">
+      <div class="header-glass glass-panel">
+        <div class="brand">
+          <div class="logo-glass">
+            <i class="ri-cup-line"></i>
+          </div>
+          <div class="brand-text">
+            <h1>NAFAL <span>Specialty Roast</span></h1>
+            <p>غرفة العمليات وإدارة المتجر — شرورة</p>
+          </div>
+        </div>
+
+        <div class="status-actions">
+          <div class="connection-pill glass-pill">
+            <span id="dbStatusDot" class="dot"></span>
+            <span id="dbStatusText">جاري فحص الاتصال...</span>
+          </div>
+          <button id="testDbBtn" class="btn-glass-sm" title="اختبار القراءة والكتابة في قاعدة البيانات">
+            <i class="ri-pulse-line"></i>
+            <span>فحص القاعدة</span>
+          </button>
+        </div>
       </div>
-    </div>
-    <div class="connection-status">
-      <span id="dbStatusDot" class="dot"></span>
-      <span id="dbStatusText">جاري الاتصال بقاعدة البيانات...</span>
     </div>
   </header>
 
-  <div class="layout">
-    <!-- القائمة الجانبية -->
-    <aside class="sidebar">
-      <button class="nav-btn active" data-tab="ordersTab">📦 الفواتير والطلبات <span id="ordersBadge" class="badge">0</span></button>
-      <button class="nav-btn" data-tab="productsTab">☕ إدارة المنتجات</button>
-      <button class="nav-btn" data-tab="offersTab">🚚 العروض والتوصيل</button>
-      <button class="nav-btn" data-tab="categoriesTab">🏷️ الأقسام</button>
-      <button class="nav-btn" data-tab="settingsTab">⚙️ الإعدادات والربط</button>
-    </aside>
+  <div class="container main-layout">
+    
+    <!-- صندوق التشخيص الذكي (يظهر تلقائياً إذا كانت قواعد فايربيس مقفلة) -->
+    <div id="diagnosticAlert" class="diagnostic-box glass-panel hidden">
+      <div class="diag-header">
+        <i class="ri-error-warning-line"></i>
+        <h3 id="diagTitle">تنبيه تشخيص قاعدة البيانات</h3>
+      </div>
+      <p id="diagDesc"></p>
+      <div class="diag-code-box">
+        <small>انسخ هذا الكود وضعه في Firebase Console داخل قسم Firestore Database ثم Rules ثم اضغط Publish:</small>
+        <pre dir="ltr">rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}</pre>
+      </div>
+    </div>
+
+    <!-- شريط التنقل الزجاجي بأسلوب أبل -->
+    <nav class="nav-bar glass-panel">
+      <button class="nav-btn active" data-tab="ordersTab">
+        <i class="ri-file-list-3-line"></i>
+        <span>الفواتير والطلبات</span>
+        <span id="ordersBadge" class="badge">0</span>
+      </button>
+      <button class="nav-btn" data-tab="productsTab">
+        <i class="ri-cup-line"></i>
+        <span>إدارة المنتجات</span>
+      </button>
+      <button class="nav-btn" data-tab="offersTab">
+        <i class="ri-truck-line"></i>
+        <span>العروض والتوصيل</span>
+      </button>
+      <button class="nav-btn" data-tab="categoriesTab">
+        <i class="ri-Folders-line"></i>
+        <span>الأقسام</span>
+      </button>
+      <button class="nav-btn" data-tab="settingsTab">
+        <i class="ri-settings-4-line"></i>
+        <span>الإعدادات والربط</span>
+      </button>
+    </nav>
 
     <!-- المحتوى الرئيسي -->
-    <main class="content">
+    <main class="content-area">
 
       <!-- 1. قسم الفواتير والطلبات -->
       <section id="ordersTab" class="tab-panel active">
         <div class="panel-header">
-          <h2>إدارة الفواتير والطلبات المباشرة</h2>
-          <div class="filter-group">
+          <div class="panel-title">
+            <i class="ri-shopping-bag-3-line"></i>
+            <h2>إدارة الفواتير والطلبات المباشرة</h2>
+          </div>
+          <div class="filter-wrap">
+            <i class="ri-filter-3-line"></i>
             <select id="orderStatusFilter">
-              <option value="all">كل الطلبات</option>
+              <option value="all">كل الفواتير والطلبات</option>
               <option value="جديد - قيد المراجعة">جديد - قيد المراجعة</option>
               <option value="جاري التحميص والتجهيز">جاري التحميص والتجهيز</option>
               <option value="مع المندوب للتوصيل">مع المندوب للتوصيل</option>
@@ -52,135 +114,202 @@
             </select>
           </div>
         </div>
+
         <div id="ordersContainer" class="orders-grid">
-          <p class="empty-msg">جاري تحميل الطلبات...</p>
+          <div class="empty-box glass-panel">
+            <i class="ri-loader-4-line spin-icon"></i>
+            <span>جاري جلب الفواتير من القاعدة...</span>
+          </div>
         </div>
       </section>
 
       <!-- 2. قسم إدارة المنتجات -->
       <section id="productsTab" class="tab-panel">
         <div class="panel-header">
-          <h2>إدارة محاصيل ومنتجات نفال</h2>
-          <button id="resetProductFormBtn" class="btn-secondary">تفريغ الحقول لمنتج جديد</button>
+          <div class="panel-title">
+            <i class="ri-add-circle-line"></i>
+            <h2>إضافة وتعديل محاصيل ومنتجات نفال</h2>
+          </div>
+          <button type="button" id="resetProductFormBtn" class="btn-glass">
+            <i class="ri-refresh-line"></i>
+            <span>تفريغ الحقول لمنتج جديد</span>
+          </button>
         </div>
 
-        <form id="productForm" class="card form-grid">
+        <form id="productForm" class="glass-panel form-card form-grid">
           <input type="hidden" id="editProductId">
-          
+
           <div class="form-group">
             <label>اسم المنتج / المحصول *</label>
-            <input type="text" id="prodName" placeholder="مثال: محصول إثيوبيا همبيلا - 250 جرام" required>
+            <div class="input-glass-wrap">
+              <i class="ri-cup-line"></i>
+              <input type="text" id="prodName" placeholder="مثال: محصول إثيوبيا همبيلا - 250 جرام" required>
+            </div>
           </div>
 
           <div class="form-group">
             <label>القسم *</label>
-            <select id="prodCategory" required>
-              <option value="محاصيل مختصة">محاصيل مختصة</option>
-              <option value="أدوات قهوة">أدوات قهوة</option>
-              <option value="بكجات نفال">بكجات نفال</option>
-            </select>
+            <div class="input-glass-wrap">
+              <i class="ri-price-tag-3-line"></i>
+              <select id="prodCategory" required>
+                <option value="محاصيل مختصة">محاصيل مختصة</option>
+                <option value="أدوات قهوة">أدوات قهوة</option>
+                <option value="بكجات نفال">بكجات نفال</option>
+              </select>
+            </div>
           </div>
 
           <div class="form-group">
             <label>السعر (بالريال السعودي) *</label>
-            <input type="number" id="prodPrice" step="0.5" min="1" placeholder="45" required>
+            <div class="input-glass-wrap">
+              <i class="ri-money-dollar-circle-line"></i>
+              <input type="number" id="prodPrice" step="0.5" min="1" placeholder="45" required>
+            </div>
           </div>
 
           <div class="form-group">
             <label>المخزون (الكمية المتوفرة) *</label>
-            <input type="number" id="prodStock" min="0" placeholder="20" required>
+            <div class="input-glass-wrap">
+              <i class="ri-stack-line"></i>
+              <input type="number" id="prodStock" min="0" placeholder="20" required>
+            </div>
           </div>
 
           <div class="form-group full-width">
             <label>وصف المحصول / الإيحاءات</label>
-            <textarea id="prodDesc" rows="2" placeholder="الإيحاءات: توت، شوكولاتة، قوام ممتلئ - مناسب للتقطير والإسبريسو"></textarea>
+            <div class="input-glass-wrap">
+              <textarea id="prodDesc" rows="2" placeholder="الإيحاءات: توت، شوكولاتة، قوام ممتلئ — مناسب للتقطير والإسبريسو"></textarea>
+            </div>
           </div>
 
           <div class="form-group full-width">
-            <label>صورة المنتج (يتم ضغطها تلقائياً بالمتصفح ورفعها)</label>
-            <div class="upload-box">
+            <label>صورة المنتج (اختر صورة ليتم ضغطها ورفعها تلقائياً، أو ضع رابطاً، أو اتركها للصورة الافتراضية)</label>
+            <div class="upload-zone glass-inset">
+              <i class="ri-image-add-line"></i>
               <input type="file" id="prodImageFile" accept="image/*">
-              <span id="uploadStatus">اختر صورة من جهازك ليتم ضغطها ورفعها فوراً</span>
+              <span id="uploadStatus">اضغط هنا لاختيار صورة من جهازك (يتم ضغطها ورفعها فوراً)</span>
             </div>
-            <input type="url" id="prodImageUrl" placeholder="أو ضع رابط الصورة مباشرة هنا" required>
+            <div class="input-glass-wrap" style="margin-top: 8px;">
+              <i class="ri-link"></i>
+              <input type="text" id="prodImageUrl" placeholder="رابط الصورة يظهر هنا تلقائياً بعد الرفع (أو الصق أي رابط صورة)">
+            </div>
             <img id="prodImagePreview" src="" alt="معاينة" class="img-preview hidden">
           </div>
 
-          <div class="form-group checkbox-group full-width">
-            <label>
+          <div class="form-group full-width">
+            <label class="checkbox-glass glass-inset">
               <input type="checkbox" id="prodFreeDelivery">
-              <span>هذا المنتج معفي من رسوم التوصيل (توصيل مجاني خاص بهذا المنتج أو لا يتطلب توصيل)</span>
+              <i class="ri-truck-line"></i>
+              <span>هذا المنتج معفي من رسوم التوصيل (توصيل مجاني خاص به)</span>
             </label>
           </div>
 
           <div class="form-actions full-width">
-            <button type="submit" id="saveProductBtn" class="btn-primary">حفظ المنتج في القاعدة</button>
+            <button type="submit" id="saveProductBtn" class="btn-primary-glass">
+              <i class="ri-save-3-line"></i>
+              <span>حفظ المنتج في قاعدة البيانات</span>
+            </button>
           </div>
         </form>
 
-        <h3 class="sub-title">المنتجات المعروضة حالياً</h3>
+        <div class="panel-header" style="margin-top: 30px;">
+          <div class="panel-title">
+            <i class="ri-store-2-line"></i>
+            <h2>المنتجات المعروضة حالياً في المتجر</h2>
+          </div>
+        </div>
         <div id="productsList" class="products-grid"></div>
       </section>
 
       <!-- 3. قسم العروض والتوصيل والشريط العلوي -->
       <section id="offersTab" class="tab-panel">
         <div class="panel-header">
-          <h2>نظام التوصيل الذكي والعروض وشريط التنبيه</h2>
+          <div class="panel-title">
+            <i class="ri-sparkling-2-line"></i>
+            <h2>نظام العروض الذكي والتوصيل وشريط شرورة</h2>
+          </div>
         </div>
 
-        <form id="offersForm" class="card form-grid">
+        <form id="offersForm" class="glass-panel form-card form-grid">
           <div class="form-group full-width">
-            <label>شريط التنبيه العلوي في المتجر (يظهر تحت الشعار بالخط العريض)</label>
-            <input type="text" id="bannerText" placeholder="المتجر يوصل لداخل شرورة فقط 🚚" required>
+            <label>شريط التنبيه العلوي في المتجر (يظهر بأعلى الموقع)</label>
+            <div class="input-glass-wrap">
+              <i class="ri-map-pin-range-line"></i>
+              <input type="text" id="bannerText" placeholder="المتجر يوصل لداخل شرورة فقط" required>
+            </div>
           </div>
 
           <div class="form-group full-width">
-            <label>رسالة العرض الترويجي للعميل (تظهر في السلة لتشجيعه على زيادة المشتريات)</label>
-            <input type="text" id="promoMessage" placeholder="اطلب بـ 100 ريال والتوصيل بـ 5 ريال! وعند الطلب بـ 300 ريال التوصيل مجاني!">
+            <label>رسالة العرض الترويجي للعميل (تظهر تحت الهيدر لتحفيز الزبون)</label>
+            <div class="input-glass-wrap">
+              <i class="ri-megaphone-line"></i>
+              <input type="text" id="promoMessage" placeholder="اطلب بـ 100 ريال والتوصيل بـ 5 ريال! وعند الطلب بـ 300 ريال التوصيل مجاني!">
+            </div>
           </div>
 
           <div class="form-group">
             <label>سعر التوصيل الأساسي داخل شرورة (ريال)</label>
-            <input type="number" id="baseDeliveryFee" min="0" step="1" placeholder="15" required>
+            <div class="input-glass-wrap">
+              <i class="ri-e-bike-2-line"></i>
+              <input type="number" id="baseDeliveryFee" min="0" step="1" placeholder="15" required>
+            </div>
           </div>
 
-          <div class="form-group checkbox-group">
-            <label>
+          <div class="form-group">
+            <label>حالة العروض التلقائية</label>
+            <label class="checkbox-glass glass-inset" style="height: 46px;">
               <input type="checkbox" id="enableSmartOffers" checked>
-              <span>تفعيل عروض خصم التوصيل التلقائية حسب قيمة الفاتورة</span>
+              <span>تفعيل خصم التوصيل التلقائي حسب الفاتورة</span>
             </label>
           </div>
 
-          <div class="offer-tier-box full-width">
-            <h4>العرض الأول (توصيل مخفض)</h4>
-            <div class="tier-inputs">
-              <div>
+          <div class="offer-tier glass-inset full-width">
+            <div class="tier-head">
+              <i class="ri-award-line"></i>
+              <h4>المرحلة الأولى (توصيل مخفض)</h4>
+            </div>
+            <div class="tier-grid">
+              <div class="form-group">
                 <label>إذا وصلت الفاتورة إلى (ريال):</label>
-                <input type="number" id="tier1Threshold" min="1" placeholder="100">
+                <div class="input-glass-wrap">
+                  <input type="number" id="tier1Threshold" min="1" placeholder="100">
+                </div>
               </div>
-              <div>
+              <div class="form-group">
                 <label>يصبح سعر التوصيل (ريال):</label>
-                <input type="number" id="tier1Fee" min="0" placeholder="5">
+                <div class="input-glass-wrap">
+                  <input type="number" id="tier1Fee" min="0" placeholder="5">
+                </div>
               </div>
             </div>
           </div>
 
-          <div class="offer-tier-box full-width">
-            <h4>العرض الثاني (توصيل مجاني أو مخفض جداً)</h4>
-            <div class="tier-inputs">
-              <div>
+          <div class="offer-tier glass-inset full-width">
+            <div class="tier-head">
+              <i class="ri-gift-2-line"></i>
+              <h4>المرحلة الثانية (توصيل مجاني أو شبه مجاني)</h4>
+            </div>
+            <div class="tier-grid">
+              <div class="form-group">
                 <label>إذا وصلت الفاتورة إلى (ريال):</label>
-                <input type="number" id="tier2Threshold" min="1" placeholder="300">
+                <div class="input-glass-wrap">
+                  <input type="number" id="tier2Threshold" min="1" placeholder="300">
+                </div>
               </div>
-              <div>
+              <div class="form-group">
                 <label>يصبح سعر التوصيل (ريال):</label>
-                <input type="number" id="tier2Fee" min="0" placeholder="0">
+                <div class="input-glass-wrap">
+                  <input type="number" id="tier2Fee" min="0" placeholder="0">
+                </div>
               </div>
             </div>
           </div>
 
           <div class="form-actions full-width">
-            <button type="submit" class="btn-primary">حفظ إعدادات العروض والتوصيل</button>
+            <button type="submit" class="btn-primary-glass">
+              <i class="ri-check-double-line"></i>
+              <span>حفظ إعدادات العروض والتوصيل</span>
+            </button>
           </div>
         </form>
       </section>
@@ -188,100 +317,156 @@
       <!-- 4. قسم الأقسام -->
       <section id="categoriesTab" class="tab-panel">
         <div class="panel-header">
-          <h2>إدارة أقسام المتجر</h2>
+          <div class="panel-title">
+            <i class="ri-folders-line"></i>
+            <h2>إدارة أقسام المتجر</h2>
+          </div>
         </div>
-        <div class="card">
+
+        <div class="glass-panel form-card">
           <div class="add-cat-row">
-            <input type="text" id="newCategoryInput" placeholder="اسم القسم الجديد (مثال: محاصيل فاخرة، محمصة نفال...)">
-            <button id="addCategoryBtn" class="btn-primary">إضافة قسم</button>
+            <div class="input-glass-wrap flex-1">
+              <i class="ri-folder-add-line"></i>
+              <input type="text" id="newCategoryInput" placeholder="اكتب اسم القسم الجديد (مثال: محاصيل فاخرة، أظرف قهوة...)">
+            </div>
+            <button type="button" id="addCategoryBtn" class="btn-primary-glass">
+              <i class="ri-add-line"></i>
+              <span>إضافة قسم</span>
+            </button>
           </div>
           <ul id="categoriesList" class="cat-list"></ul>
         </div>
       </section>
 
-      <!-- 5. قسم الإعدادات والربط (الواتساب + المفاتيح + مولد الكود) -->
+      <!-- 5. قسم الإعدادات والربط -->
       <section id="settingsTab" class="tab-panel">
         <div class="panel-header">
-          <h2>إعدادات المتجر ومفاتيح الربط البرمجي</h2>
+          <div class="panel-title">
+            <i class="ri-settings-4-line"></i>
+            <h2>إعدادات التواصل ومفاتيح الربط البرمجي</h2>
+          </div>
         </div>
 
-        <!-- إعدادات التواصل -->
-        <form id="contactSettingsForm" class="card form-grid">
-          <h3 class="full-width">بيانات المتجر والتواصل</h3>
-          
-          <div class="form-group">
-            <label>اسم المتجر</label>
-            <input type="text" id="storeNameInput" value="NAFAL Specialty Roast | نفال للقهوة المختصة">
+        <!-- إعدادات الواتساب والتواصل -->
+        <form id="contactSettingsForm" class="glass-panel form-card form-grid" style="margin-bottom: 24px;">
+          <div class="full-width section-sub">
+            <i class="ri-whatsapp-line"></i>
+            <h3>رقم واتساب المتجر وحسابات التواصل</h3>
           </div>
 
           <div class="form-group">
-            <label>رقم واتساب المتجر لاستقبال الفواتير (مع رمز الدولة بدون +)</label>
-            <input type="text" id="whatsappNumberInput" placeholder="966500000000" required>
+            <label>اسم المتجر</label>
+            <div class="input-glass-wrap">
+              <i class="ri-store-line"></i>
+              <input type="text" id="storeNameInput" value="NAFAL Specialty Roast">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>رقم واتساب المتجر لاستقبال الطلبات (مع مفتاح الدولة 966 بدون +)</label>
+            <div class="input-glass-wrap">
+              <i class="ri-whatsapp-line"></i>
+              <input type="text" id="whatsappNumberInput" placeholder="966500000000" required>
+            </div>
           </div>
 
           <div class="form-group">
             <label>رابط حساب سناب شات</label>
-            <input type="url" id="snapchatUrlInput" placeholder="https://www.snapchat.com/add/...">
+            <div class="input-glass-wrap">
+              <i class="ri-snapchat-line"></i>
+              <input type="url" id="snapchatUrlInput" placeholder="https://www.snapchat.com/add/...">
+            </div>
           </div>
 
           <div class="form-group">
             <label>رابط حساب تيك توك</label>
-            <input type="url" id="tiktokUrlInput" placeholder="https://www.tiktok.com/@...">
+            <div class="input-glass-wrap">
+              <i class="ri-tiktok-line"></i>
+              <input type="url" id="tiktokUrlInput" placeholder="https://www.tiktok.com/@...">
+            </div>
           </div>
 
           <div class="form-actions full-width">
-            <button type="submit" class="btn-primary">حفظ بيانات التواصل في القاعدة</button>
+            <button type="submit" class="btn-primary-glass">
+              <i class="ri-save-line"></i>
+              <span>حفظ رقم الواتساب وحسابات التواصل</span>
+            </button>
           </div>
         </form>
 
-        <!-- إعدادات المفاتيح (Firebase + ImgBB) -->
-        <form id="keysConfigForm" class="card form-grid">
-          <h3 class="full-width">مفاتيح الربط (Firebase & ImgBB API)</h3>
-          <p class="full-width hint-text">تقدر تغير مفتاح رفع الصور أو قاعدة بيانات فايربيس بأي لحظة، والنظام بيحدث نفسه ويولد لك الكود الجاهز فوراً.</p>
+        <!-- مفاتيح Firebase & ImgBB -->
+        <form id="keysConfigForm" class="glass-panel form-card form-grid">
+          <div class="full-width section-sub">
+            <i class="ri-key-2-line"></i>
+            <h3>مفاتيح قاعدة البيانات (Firebase) ورفع الصور (ImgBB)</h3>
+          </div>
 
           <div class="form-group full-width">
             <label>مفتاح رفع الصور (ImgBB API Key)</label>
-            <input type="text" id="imgbbKeyInput" required>
+            <div class="input-glass-wrap">
+              <i class="ri-image-2-line"></i>
+              <input type="text" id="imgbbKeyInput" required>
+            </div>
           </div>
 
           <div class="form-group">
             <label>Firebase apiKey</label>
-            <input type="text" id="fbApiKey" required>
+            <div class="input-glass-wrap">
+              <input type="text" id="fbApiKey" dir="ltr" required>
+            </div>
           </div>
 
           <div class="form-group">
             <label>Firebase authDomain</label>
-            <input type="text" id="fbAuthDomain" required>
+            <div class="input-glass-wrap">
+              <input type="text" id="fbAuthDomain" dir="ltr" required>
+            </div>
           </div>
 
           <div class="form-group">
             <label>Firebase projectId</label>
-            <input type="text" id="fbProjectId" required>
+            <div class="input-glass-wrap">
+              <input type="text" id="fbProjectId" dir="ltr" required>
+            </div>
           </div>
 
           <div class="form-group">
             <label>Firebase storageBucket</label>
-            <input type="text" id="fbStorageBucket" required>
+            <div class="input-glass-wrap">
+              <input type="text" id="fbStorageBucket" dir="ltr" required>
+            </div>
           </div>
 
           <div class="form-group">
             <label>Firebase messagingSenderId</label>
-            <input type="text" id="fbMessagingSenderId" required>
+            <div class="input-glass-wrap">
+              <input type="text" id="fbMessagingSenderId" dir="ltr" required>
+            </div>
           </div>
 
           <div class="form-group">
             <label>Firebase appId</label>
-            <input type="text" id="fbAppId" required>
+            <div class="input-glass-wrap">
+              <input type="text" id="fbAppId" dir="ltr" required>
+            </div>
           </div>
 
-          <div class="form-actions full-width">
-            <button type="submit" class="btn-primary">تحديث المفاتيح وتوليد كود الربط</button>
-            <button type="button" id="resetDefaultKeysBtn" class="btn-secondary">استعادة مفاتيحك الافتراضية</button>
+          <div class="form-actions full-width" style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button type="submit" class="btn-primary-glass">
+              <i class="ri-refresh-line"></i>
+              <span>تحديث المفاتيح وتوليد كود الربط</span>
+            </button>
+            <button type="button" id="resetDefaultKeysBtn" class="btn-glass">
+              <i class="ri-history-line"></i>
+              <span>استعادة مفاتيحك الافتراضية</span>
+            </button>
           </div>
 
           <div class="form-group full-width">
-            <label>الكود المولد تلقائياً (انسخه وضعه في المتجر العام إذا غيرت القاعدة مستقبلاً):</label>
-            <textarea id="generatedFirebaseCode" rows="9" readonly dir="ltr"></textarea>
+            <label>الكود المولد تلقائياً (جاهز للنسخ إذا غيرت قاعدة البيانات مستقبلاً):</label>
+            <div class="input-glass-wrap">
+              <textarea id="generatedFirebaseCode" rows="8" readonly dir="ltr"></textarea>
+            </div>
           </div>
         </form>
       </section>
@@ -289,7 +474,11 @@
     </main>
   </div>
 
-  <div id="toast" class="toast hidden">تم الحفظ بنجاح</div>
+  <!-- إشعار عائم زجاجي -->
+  <div id="toast" class="toast glass-pill hidden">
+    <i class="ri-information-line"></i>
+    <span id="toastText">تم الحفظ بنجاح</span>
+  </div>
 
   <script type="module" src="app.js"></script>
 </body>

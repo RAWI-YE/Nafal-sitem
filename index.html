@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>غرفة العمليات | NAFAL Specialty Roast</title>
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- الشريط العلوي -->
+  <header class="top-bar">
+    <div class="brand">
+      <div class="brand-logo">☕</div>
+      <div>
+        <h1>NAFAL <span>Specialty Roast</span></h1>
+        <p>غرفة العمليات وإدارة المتجر - شرورة</p>
+      </div>
+    </div>
+    <div class="connection-status">
+      <span id="dbStatusDot" class="dot"></span>
+      <span id="dbStatusText">جاري الاتصال بقاعدة البيانات...</span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <!-- القائمة الجانبية -->
+    <aside class="sidebar">
+      <button class="nav-btn active" data-tab="ordersTab">📦 الفواتير والطلبات <span id="ordersBadge" class="badge">0</span></button>
+      <button class="nav-btn" data-tab="productsTab">☕ إدارة المنتجات</button>
+      <button class="nav-btn" data-tab="offersTab">🚚 العروض والتوصيل</button>
+      <button class="nav-btn" data-tab="categoriesTab">🏷️ الأقسام</button>
+      <button class="nav-btn" data-tab="settingsTab">⚙️ الإعدادات والربط</button>
+    </aside>
+
+    <!-- المحتوى الرئيسي -->
+    <main class="content">
+
+      <!-- 1. قسم الفواتير والطلبات -->
+      <section id="ordersTab" class="tab-panel active">
+        <div class="panel-header">
+          <h2>إدارة الفواتير والطلبات المباشرة</h2>
+          <div class="filter-group">
+            <select id="orderStatusFilter">
+              <option value="all">كل الطلبات</option>
+              <option value="جديد - قيد المراجعة">جديد - قيد المراجعة</option>
+              <option value="جاري التحميص والتجهيز">جاري التحميص والتجهيز</option>
+              <option value="مع المندوب للتوصيل">مع المندوب للتوصيل</option>
+              <option value="تم التوصيل">تم التوصيل</option>
+              <option value="ملغي">ملغي</option>
+            </select>
+          </div>
+        </div>
+        <div id="ordersContainer" class="orders-grid">
+          <p class="empty-msg">جاري تحميل الطلبات...</p>
+        </div>
+      </section>
+
+      <!-- 2. قسم إدارة المنتجات -->
+      <section id="productsTab" class="tab-panel">
+        <div class="panel-header">
+          <h2>إدارة محاصيل ومنتجات نفال</h2>
+          <button id="resetProductFormBtn" class="btn-secondary">تفريغ الحقول لمنتج جديد</button>
+        </div>
+
+        <form id="productForm" class="card form-grid">
+          <input type="hidden" id="editProductId">
+          
+          <div class="form-group">
+            <label>اسم المنتج / المحصول *</label>
+            <input type="text" id="prodName" placeholder="مثال: محصول إثيوبيا همبيلا - 250 جرام" required>
+          </div>
+
+          <div class="form-group">
+            <label>القسم *</label>
+            <select id="prodCategory" required>
+              <option value="محاصيل مختصة">محاصيل مختصة</option>
+              <option value="أدوات قهوة">أدوات قهوة</option>
+              <option value="بكجات نفال">بكجات نفال</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>السعر (بالريال السعودي) *</label>
+            <input type="number" id="prodPrice" step="0.5" min="1" placeholder="45" required>
+          </div>
+
+          <div class="form-group">
+            <label>المخزون (الكمية المتوفرة) *</label>
+            <input type="number" id="prodStock" min="0" placeholder="20" required>
+          </div>
+
+          <div class="form-group full-width">
+            <label>وصف المحصول / الإيحاءات</label>
+            <textarea id="prodDesc" rows="2" placeholder="الإيحاءات: توت، شوكولاتة، قوام ممتلئ - مناسب للتقطير والإسبريسو"></textarea>
+          </div>
+
+          <div class="form-group full-width">
+            <label>صورة المنتج (يتم ضغطها تلقائياً بالمتصفح ورفعها)</label>
+            <div class="upload-box">
+              <input type="file" id="prodImageFile" accept="image/*">
+              <span id="uploadStatus">اختر صورة من جهازك ليتم ضغطها ورفعها فوراً</span>
+            </div>
+            <input type="url" id="prodImageUrl" placeholder="أو ضع رابط الصورة مباشرة هنا" required>
+            <img id="prodImagePreview" src="" alt="معاينة" class="img-preview hidden">
+          </div>
+
+          <div class="form-group checkbox-group full-width">
+            <label>
+              <input type="checkbox" id="prodFreeDelivery">
+              <span>هذا المنتج معفي من رسوم التوصيل (توصيل مجاني خاص بهذا المنتج أو لا يتطلب توصيل)</span>
+            </label>
+          </div>
+
+          <div class="form-actions full-width">
+            <button type="submit" id="saveProductBtn" class="btn-primary">حفظ المنتج في القاعدة</button>
+          </div>
+        </form>
+
+        <h3 class="sub-title">المنتجات المعروضة حالياً</h3>
+        <div id="productsList" class="products-grid"></div>
+      </section>
+
+      <!-- 3. قسم العروض والتوصيل والشريط العلوي -->
+      <section id="offersTab" class="tab-panel">
+        <div class="panel-header">
+          <h2>نظام التوصيل الذكي والعروض وشريط التنبيه</h2>
+        </div>
+
+        <form id="offersForm" class="card form-grid">
+          <div class="form-group full-width">
+            <label>شريط التنبيه العلوي في المتجر (يظهر تحت الشعار بالخط العريض)</label>
+            <input type="text" id="bannerText" placeholder="المتجر يوصل لداخل شرورة فقط 🚚" required>
+          </div>
+
+          <div class="form-group full-width">
+            <label>رسالة العرض الترويجي للعميل (تظهر في السلة لتشجيعه على زيادة المشتريات)</label>
+            <input type="text" id="promoMessage" placeholder="اطلب بـ 100 ريال والتوصيل بـ 5 ريال! وعند الطلب بـ 300 ريال التوصيل مجاني!">
+          </div>
+
+          <div class="form-group">
+            <label>سعر التوصيل الأساسي داخل شرورة (ريال)</label>
+            <input type="number" id="baseDeliveryFee" min="0" step="1" placeholder="15" required>
+          </div>
+
+          <div class="form-group checkbox-group">
+            <label>
+              <input type="checkbox" id="enableSmartOffers" checked>
+              <span>تفعيل عروض خصم التوصيل التلقائية حسب قيمة الفاتورة</span>
+            </label>
+          </div>
+
+          <div class="offer-tier-box full-width">
+            <h4>العرض الأول (توصيل مخفض)</h4>
+            <div class="tier-inputs">
+              <div>
+                <label>إذا وصلت الفاتورة إلى (ريال):</label>
+                <input type="number" id="tier1Threshold" min="1" placeholder="100">
+              </div>
+              <div>
+                <label>يصبح سعر التوصيل (ريال):</label>
+                <input type="number" id="tier1Fee" min="0" placeholder="5">
+              </div>
+            </div>
+          </div>
+
+          <div class="offer-tier-box full-width">
+            <h4>العرض الثاني (توصيل مجاني أو مخفض جداً)</h4>
+            <div class="tier-inputs">
+              <div>
+                <label>إذا وصلت الفاتورة إلى (ريال):</label>
+                <input type="number" id="tier2Threshold" min="1" placeholder="300">
+              </div>
+              <div>
+                <label>يصبح سعر التوصيل (ريال):</label>
+                <input type="number" id="tier2Fee" min="0" placeholder="0">
+              </div>
+            </div>
+          </div>
+
+          <div class="form-actions full-width">
+            <button type="submit" class="btn-primary">حفظ إعدادات العروض والتوصيل</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- 4. قسم الأقسام -->
+      <section id="categoriesTab" class="tab-panel">
+        <div class="panel-header">
+          <h2>إدارة أقسام المتجر</h2>
+        </div>
+        <div class="card">
+          <div class="add-cat-row">
+            <input type="text" id="newCategoryInput" placeholder="اسم القسم الجديد (مثال: محاصيل فاخرة، محمصة نفال...)">
+            <button id="addCategoryBtn" class="btn-primary">إضافة قسم</button>
+          </div>
+          <ul id="categoriesList" class="cat-list"></ul>
+        </div>
+      </section>
+
+      <!-- 5. قسم الإعدادات والربط (الواتساب + المفاتيح + مولد الكود) -->
+      <section id="settingsTab" class="tab-panel">
+        <div class="panel-header">
+          <h2>إعدادات المتجر ومفاتيح الربط البرمجي</h2>
+        </div>
+
+        <!-- إعدادات التواصل -->
+        <form id="contactSettingsForm" class="card form-grid">
+          <h3 class="full-width">بيانات المتجر والتواصل</h3>
+          
+          <div class="form-group">
+            <label>اسم المتجر</label>
+            <input type="text" id="storeNameInput" value="NAFAL Specialty Roast | نفال للقهوة المختصة">
+          </div>
+
+          <div class="form-group">
+            <label>رقم واتساب المتجر لاستقبال الفواتير (مع رمز الدولة بدون +)</label>
+            <input type="text" id="whatsappNumberInput" placeholder="966500000000" required>
+          </div>
+
+          <div class="form-group">
+            <label>رابط حساب سناب شات</label>
+            <input type="url" id="snapchatUrlInput" placeholder="https://www.snapchat.com/add/...">
+          </div>
+
+          <div class="form-group">
+            <label>رابط حساب تيك توك</label>
+            <input type="url" id="tiktokUrlInput" placeholder="https://www.tiktok.com/@...">
+          </div>
+
+          <div class="form-actions full-width">
+            <button type="submit" class="btn-primary">حفظ بيانات التواصل في القاعدة</button>
+          </div>
+        </form>
+
+        <!-- إعدادات المفاتيح (Firebase + ImgBB) -->
+        <form id="keysConfigForm" class="card form-grid">
+          <h3 class="full-width">مفاتيح الربط (Firebase & ImgBB API)</h3>
+          <p class="full-width hint-text">تقدر تغير مفتاح رفع الصور أو قاعدة بيانات فايربيس بأي لحظة، والنظام بيحدث نفسه ويولد لك الكود الجاهز فوراً.</p>
+
+          <div class="form-group full-width">
+            <label>مفتاح رفع الصور (ImgBB API Key)</label>
+            <input type="text" id="imgbbKeyInput" required>
+          </div>
+
+          <div class="form-group">
+            <label>Firebase apiKey</label>
+            <input type="text" id="fbApiKey" required>
+          </div>
+
+          <div class="form-group">
+            <label>Firebase authDomain</label>
+            <input type="text" id="fbAuthDomain" required>
+          </div>
+
+          <div class="form-group">
+            <label>Firebase projectId</label>
+            <input type="text" id="fbProjectId" required>
+          </div>
+
+          <div class="form-group">
+            <label>Firebase storageBucket</label>
+            <input type="text" id="fbStorageBucket" required>
+          </div>
+
+          <div class="form-group">
+            <label>Firebase messagingSenderId</label>
+            <input type="text" id="fbMessagingSenderId" required>
+          </div>
+
+          <div class="form-group">
+            <label>Firebase appId</label>
+            <input type="text" id="fbAppId" required>
+          </div>
+
+          <div class="form-actions full-width">
+            <button type="submit" class="btn-primary">تحديث المفاتيح وتوليد كود الربط</button>
+            <button type="button" id="resetDefaultKeysBtn" class="btn-secondary">استعادة مفاتيحك الافتراضية</button>
+          </div>
+
+          <div class="form-group full-width">
+            <label>الكود المولد تلقائياً (انسخه وضعه في المتجر العام إذا غيرت القاعدة مستقبلاً):</label>
+            <textarea id="generatedFirebaseCode" rows="9" readonly dir="ltr"></textarea>
+          </div>
+        </form>
+      </section>
+
+    </main>
+  </div>
+
+  <div id="toast" class="toast hidden">تم الحفظ بنجاح</div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

@@ -3,502 +3,1072 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>غرفة العمليات | NAFAL Specialty Roast</title>
+  <title>البوابة الذكية نفال | NAFAL Smart Portal</title>
   <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/remixicon@4.3.0/fonts/remixicon.css" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-  <!-- خلفية الإضاءة المحيطية (Apple Spatial Glass) -->
+  <!-- خلفية الإضاءة المحيطية النهارية (Apple Spatial Glass) -->
   <div class="ambient-bg">
     <div class="orb orb-1"></div>
     <div class="orb orb-2"></div>
     <div class="orb orb-3"></div>
   </div>
 
-  <!-- الهيدر الزجاجي العلوي -->
-  <header class="top-header">
-    <div class="container">
-      <div class="header-glass glass-panel">
-        <div class="brand">
-          <div class="logo-glass" id="headerLogoBox">
-            <img id="headerLogoImg" src="" alt="شعار المتجر" class="hidden">
-            <i id="headerLogoIcon" class="ri-cup-line"></i>
-          </div>
-          <div class="brand-text">
-            <h1 id="headerStoreName">NAFAL <span>Specialty Roast</span></h1>
-            <p id="headerStoreDesc">غرفة العمليات وإدارة المتجر — شرورة</p>
+  <!-- ==================== شاشة تسجيل الدخول الذكية (البوابة الموحدة) ==================== -->
+  <section id="loginScreen" class="login-wrapper">
+    <div class="login-card glass-panel">
+      <div class="login-logo">
+        <i class="ri-store-3-line"></i>
+      </div>
+      <div class="login-header">
+        <h1>البوابة الذكية — نفال</h1>
+        <p>بوابة الإدارة العليا، التجار، وفرق العمل في شرورة</p>
+      </div>
+
+      <form id="loginForm" class="login-form">
+        <div class="form-group">
+          <label>اسم المستخدم (الأدمن)</label>
+          <div class="input-glass-wrap">
+            <i class="ri-user-star-line"></i>
+            <input type="text" id="loginUsername" placeholder="أدخل اسم المستخدم الخاص بك" dir="ltr" required>
           </div>
         </div>
 
-        <div class="status-actions">
-          <div class="connection-pill glass-pill">
-            <span id="dbStatusDot" class="dot"></span>
-            <span id="dbStatusText">جاري الاتصال...</span>
+        <div class="form-group">
+          <label>كلمة المرور</label>
+          <div class="input-glass-wrap">
+            <i class="ri-lock-password-line"></i>
+            <input type="password" id="loginPassword" placeholder="••••••••" dir="ltr" required>
           </div>
-          <button type="button" id="testDbBtn" class="btn-glass-sm">
+        </div>
+
+        <button type="submit" id="loginSubmitBtn" class="btn-primary-glass full-btn">
+          <i class="ri-login-circle-line"></i>
+          <span>دخول للبوابة الذكية</span>
+        </button>
+      </form>
+
+      <div class="login-footer-hint">
+        <i class="ri-shield-keyhole-line"></i>
+        <span>نظام صلاحيات ذكي يوجهك تلقائياً للوحتك الخاصة</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== الهيكل العام بعد تسجيل الدخول ==================== -->
+  <div id="portalApp" class="hidden">
+
+    <!-- الشريط العلوي الموحد -->
+    <header class="top-header">
+      <div class="container">
+        <div class="header-glass glass-panel">
+          <div class="brand">
+            <div class="logo-glass" id="portalHeaderLogo">
+              <img id="portalLogoImg" src="" alt="الشعار" class="hidden">
+              <i id="portalLogoIcon" class="ri-cup-line"></i>
+            </div>
+            <div class="brand-text">
+              <div class="role-title-row">
+                <h1 id="portalTitle">البوابة الذكية نفال</h1>
+                <span id="roleBadge" class="role-pill">الإدارة العليا</span>
+              </div>
+              <p id="portalSubtitle">إدارة السوق الشعبي والمتاجر — شرورة</p>
+            </div>
+          </div>
+
+          <div class="status-actions">
+            <div class="connection-pill glass-pill">
+              <span id="dbStatusDot" class="dot online"></span>
+              <span id="currentUserDisplay">متصل</span>
+            </div>
+            <button type="button" id="logoutBtn" class="btn-danger-glass">
+              <i class="ri-logout-box-r-line"></i>
+              <span>خروج</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <div class="container main-layout">
+
+      <!-- تنبيه قواعد فايربيس (يظهر فقط لو القاعدة مقفلة) -->
+      <div id="diagnosticAlert" class="diagnostic-box glass-panel hidden">
+        <div class="diag-header">
+          <i class="ri-error-warning-fill"></i>
+          <h3>تنبيه صلاحيات قاعدة البيانات (Firestore Rules)</h3>
+        </div>
+        <p>يرجى فتح صلاحيات القراءة والكتابة في حسابك بـ Firebase Console داخل قسم Firestore Database ثم تبويب Rules.</p>
+      </div>
+
+      <!-- ========================================================================= -->
+      <!-- 1. قسم الإدارة العليا (Super Admin - أبو تركي) -->
+      <!-- ========================================================================= -->
+      <div id="superAdminView" class="role-view hidden">
+
+        <!-- شريط إحصائيات المنصة الشامل -->
+        <div class="stats-grid">
+          <div class="stat-card glass-panel">
+            <div class="stat-icon"><i class="ri-store-2-line"></i></div>
+            <div>
+              <small>إجمالي المتاجر المسجلة</small>
+              <h3 id="saStatTotalStores">0</h3>
+            </div>
+          </div>
+          <div class="stat-card glass-panel">
+            <div class="stat-icon success"><i class="ri-Verified-badge-line"></i></div>
+            <div>
+              <small>المتاجر النشطة حالياً</small>
+              <h3 id="saStatActiveStores">0</h3>
+            </div>
+          </div>
+          <div class="stat-card glass-panel">
+            <div class="stat-icon warning"><i class="ri-notification-badge-line"></i></div>
+            <div>
+              <small>طلبات تغيير أسماء المتاجر</small>
+              <h3 id="saStatPendingNames">0</h3>
+            </div>
+          </div>
+          <div class="stat-card glass-panel">
+            <div class="stat-icon"><i class="ri-receipt-line"></i></div>
+            <div>
+              <small>إجمالي فواتير المنصة</small>
+              <h3 id="saStatTotalOrders">0</h3>
+            </div>
+          </div>
+        </div>
+
+        <!-- شريط تنقل الإدارة العليا -->
+        <nav class="nav-bar glass-panel" id="saNavBar">
+          <button type="button" class="nav-btn active" data-tab="saStoresTab">
+            <i class="ri-store-3-line"></i>
+            <span>المتاجر والاشتراكات</span>
+          </button>
+          <button type="button" class="nav-btn" data-tab="saNameRequestsTab">
             <i class="ri-shield-check-line"></i>
-            <span>فحص القاعدة</span>
+            <span>مراجعة أسماء المتاجر</span>
+            <span id="saRequestsBadge" class="badge">0</span>
           </button>
-        </div>
-      </div>
-    </div>
-  </header>
-
-  <div class="container main-layout">
-
-    <!-- تنبيه التشخيص الذكي (يظهر فقط إذا كانت قواعد فايربيس مقفلة من لوحة قوقل) -->
-    <div id="diagnosticAlert" class="diagnostic-box glass-panel hidden">
-      <div class="diag-header">
-        <i class="ri-error-warning-fill"></i>
-        <h3 id="diagTitle">تنبيه صلاحيات قاعدة البيانات (Firebase Rules)</h3>
-      </div>
-      <p id="diagDesc"></p>
-      <div class="diag-code-box">
-        <small>انسخ هذا الكود وضعه في موقع Firebase Console داخل قسم Firestore Database ثم تبويب Rules واضغط Publish:</small>
-        <pre dir="ltr">rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if true;
-    }
-  }
-}</pre>
-      </div>
-    </div>
-
-    <!-- شريط التنقل الزجاجي الرئيسي -->
-    <nav class="nav-bar glass-panel">
-      <button type="button" class="nav-btn active" data-tab="ordersTab">
-        <i class="ri-file-list-3-line"></i>
-        <span>الفواتير والطلبات</span>
-        <span id="ordersBadge" class="badge">0</span>
-      </button>
-      <button type="button" class="nav-btn" data-tab="productsTab">
-        <i class="ri-cup-line"></i>
-        <span>المنتجات والمحاصيل</span>
-      </button>
-      <button type="button" class="nav-btn" data-tab="offersTab">
-        <i class="ri-truck-line"></i>
-        <span>العروض والتوصيل</span>
-      </button>
-      <button type="button" class="nav-btn" data-tab="categoriesTab">
-        <i class="ri-layout-grid-line"></i>
-        <span>الأقسام</span>
-      </button>
-      <button type="button" class="nav-btn" data-tab="settingsTab">
-        <i class="ri-settings-4-line"></i>
-        <span>إعدادات المتجر والهوية</span>
-      </button>
-    </nav>
-
-    <!-- المحتوى الرئيسي -->
-    <main class="content-area">
-
-      <!-- ==================== 1. قسم الفواتير والطلبات (قوائم منسدلة مريحة) ==================== -->
-      <section id="ordersTab" class="tab-panel active">
-        <div class="panel-header">
-          <div class="panel-title">
-            <i class="ri-shopping-bag-3-line"></i>
-            <div>
-              <h2>الفواتير والطلبات الواردة</h2>
-              <p class="sub-hint">اضغط على أي فاتورة لفتح تفاصيلها أو لتغيير حالة الطلب</p>
-            </div>
-          </div>
-
-          <!-- فلتر حالات الطلبات -->
-          <div class="status-filter-pills" id="orderFilterBar">
-            <button type="button" class="filter-pill active" data-status="all">
-              <i class="ri-apps-2-line"></i><span>الكل</span>
-            </button>
-            <button type="button" class="filter-pill" data-status="جديد - قيد المراجعة">
-              <i class="ri-time-line"></i><span>قيد المراجعة</span>
-            </button>
-            <button type="button" class="filter-pill" data-status="جاري التحميص والتجهيز">
-              <i class="ri-fire-line"></i><span>قيد التجهيز</span>
-            </button>
-            <button type="button" class="filter-pill" data-status="مع المندوب للتوصيل">
-              <i class="ri-e-bike-2-line"></i><span>مع المندوب</span>
-            </button>
-            <button type="button" class="filter-pill" data-status="تم التوصيل">
-              <i class="ri-checkbox-circle-line"></i><span>تم التوصيل</span>
-            </button>
-            <button type="button" class="filter-pill" data-status="ملغي">
-              <i class="ri-close-circle-line"></i><span>ملغي</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- حاوية الفواتير المنسدلة (Accordions) -->
-        <div id="ordersAccordionList" class="orders-accordion-list">
-          <div class="empty-box glass-panel">
-            <i class="ri-loader-4-line spin-icon"></i>
-            <span>جاري تحميل الفواتير...</span>
-          </div>
-        </div>
-      </section>
-
-      <!-- ==================== 2. قسم إدارة المنتجات والمحاصيل ==================== -->
-      <section id="productsTab" class="tab-panel">
-        
-        <!-- نافذة منسدلة لإضافة أو تعديل منتج -->
-        <div class="accordion-card glass-panel open" id="productFormAccordion">
-          <button type="button" class="accordion-Trigger" id="toggleProductFormBtn">
-            <div class="trigger-right">
-              <i class="ri-add-circle-line"></i>
-              <span id="formAccordionTitle">إضافة منتج أو محصول جديد للمتجر</span>
-            </div>
-            <i class="ri-arrow-down-s-line arrow-icon"></i>
+          <button type="button" class="nav-btn" data-tab="saPlatformSettingsTab">
+            <i class="ri-compass-discover-line"></i>
+            <span>إعدادات سوق شرورة</span>
           </button>
+          <button type="button" class="nav-btn" data-tab="saSecurityTab">
+            <i class="ri-admin-line"></i>
+            <span>بيانات دخولي (الأدمن الأعلى)</span>
+          </button>
+        </nav>
 
-          <div class="accordion-content">
-            <form id="productForm" class="form-grid">
-              <input type="hidden" id="editProductId">
-
-              <div class="form-group">
-                <label>اسم المنتج / المحصول *</label>
-                <div class="input-glass-wrap">
-                  <i class="ri-cup-line"></i>
-                  <input type="text" id="prodName" placeholder="مثال: محصول إثيوبيا همبيلا - 250 جرام" required>
-                </div>
+        <!-- تبويب 1: إدارة المتاجر والاشتراكات -->
+        <section id="saStoresTab" class="tab-panel active">
+          
+          <!-- قائمة منسدلة لإضافة أو تعديل متجر وتاجر جديد -->
+          <div class="accordion-card glass-panel open" id="saStoreFormAccordion">
+            <button type="button" class="accordion-trigger" id="toggleSaStoreFormBtn">
+              <div class="trigger-right">
+                <i class="ri-add-circle-line"></i>
+                <span id="saStoreFormTitle">تأسيس متجر جديد ومنح صلاحية لتاجر</span>
               </div>
-
-              <div class="form-group">
-                <label>القسم *</label>
-                <div class="input-glass-wrap">
-                  <i class="ri-layout-grid-line"></i>
-                  <select id="prodCategory" required>
-                    <option value="محاصيل مختصة">محاصيل مختصة</option>
-                    <option value="أدوات قهوة">أدوات قهوة</option>
-                    <option value="بكجات نفال">بكجات نفال</option>
-                  </select>
-                </div>
-              </div>
-
-              <div class="form-group">
-                <label>السعر (بالريال السعودي) *</label>
-                <div class="input-glass-wrap">
-                  <i class="ri-money-dollar-circle-line"></i>
-                  <input type="number" id="prodPrice" step="0.5" min="1" placeholder="45" required>
-                </div>
-              </div>
-
-              <div class="form-group">
-                <label>الكمية المتوفرة بالمخزون *</label>
-                <div class="input-glass-wrap">
-                  <i class="ri-archive-stack-line"></i>
-                  <input type="number" id="prodStock" min="0" placeholder="25" required>
-                </div>
-              </div>
-
-              <div class="form-group full-width">
-                <label>وصف المنتج / الإيحاءات</label>
-                <div class="input-glass-wrap">
-                  <textarea id="prodDesc" rows="2" placeholder="الإيحاءات: شوكولاتة، فواكه استوائية، قوام غني — مناسب للتقطير والإسبريسو"></textarea>
-                </div>
-              </div>
-
-              <div class="form-group full-width">
-                <label>صورة المنتج (يتم ضغطها ورفعها تلقائياً عند اختيارها)</label>
-                <div class="upload-zone glass-inset">
-                  <i class="ri-image-add-line"></i>
-                  <input type="file" id="prodImageFile" accept="image/*">
-                  <span id="uploadStatus">اضغط هنا لاختيار صورة المنتج من الجوال أو الكمبيوتر</span>
-                </div>
-                <div class="input-glass-wrap" style="margin-top: 8px;">
-                  <i class="ri-link"></i>
-                  <input type="text" id="prodImageUrl" placeholder="أو الصق رابط الصورة مباشرة هنا (اختياري)">
-                </div>
-                <img id="prodImagePreview" src="" alt="معاينة" class="img-preview hidden">
-              </div>
-
-              <div class="form-group full-width">
-                <label class="checkbox-glass glass-inset">
-                  <input type="checkbox" id="prodFreeDelivery">
-                  <i class="ri-truck-line"></i>
-                  <span>هذا المنتج معفي من رسوم التوصيل (توصيل مجاني خاص بهذا المنتج)</span>
-                </label>
-              </div>
-
-              <div class="form-actions full-width">
-                <button type="submit" id="saveProductBtn" class="btn-primary-glass">
-                  <i class="ri-save-3-line"></i>
-                  <span>حفظ المنتج في المتجر</span>
-                </button>
-                <button type="button" id="resetProductFormBtn" class="btn-glass">
-                  <i class="ri-refresh-line"></i>
-                  <span>تفريغ الحقول</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-
-        <div class="panel-header" style="margin-top: 28px;">
-          <div class="panel-title">
-            <i class="ri-store-2-line"></i>
-            <div>
-              <h2>المنتجات المعروضة حالياً</h2>
-              <p class="sub-hint">تظهر بشكل شبكي (منتجين بجانب بعض في الجوال و4 في الكمبيوتر)</p>
-            </div>
-          </div>
-        </div>
-
-        <!-- شبكة المنتجات (2 بالجوال و 4 بالكمبيوتر) -->
-        <div id="productsList" class="products-grid"></div>
-      </section>
-
-      <!-- ==================== 3. قسم العروض والتوصيل الذكي ==================== -->
-      <section id="offersTab" class="tab-panel">
-        <div class="panel-header">
-          <div class="panel-title">
-            <i class="ri-sparkling-2-line"></i>
-            <div>
-              <h2>إدارة العروض وأسعار التوصيل وشريط التنبيه</h2>
-              <p class="sub-hint">عدّل الأسعار والشروط في أي وقت وستنعكس فوراً في المتجر</p>
-            </div>
-          </div>
-        </div>
-
-        <form id="offersForm" class="glass-panel form-card form-grid">
-          <div class="form-group full-width">
-            <label>شريط التنبيه العلوي الثابت (تحت الشعار أو أعلى المتجر)</label>
-            <div class="input-glass-wrap">
-              <i class="ri-map-pin-range-line"></i>
-              <input type="text" id="bannerText" placeholder="المتجر يوصل لداخل شرورة فقط" required>
-            </div>
-          </div>
-
-          <div class="form-group full-width">
-            <label>نص شريط العروض الترويجي للعملاء</label>
-            <div class="input-glass-wrap">
-              <i class="ri-megaphone-line"></i>
-              <input type="text" id="promoMessage" placeholder="اطلب بـ 100 ريال والتوصيل بـ 5 ريال! وعند الطلب بـ 300 ريال التوصيل مجاني!">
-            </div>
-          </div>
-
-          <div class="form-group">
-            <label>سعر التوصيل الأساسي داخل شرورة (ريال)</label>
-            <div class="input-glass-wrap">
-              <i class="ri-e-bike-2-line"></i>
-              <input type="number" id="baseDeliveryFee" min="0" step="1" placeholder="15" required>
-            </div>
-          </div>
-
-          <div class="form-group">
-            <label>تفعيل العروض التلقائية في السلة</label>
-            <label class="checkbox-glass glass-inset">
-              <input type="checkbox" id="enableSmartOffers" checked>
-              <i class="ri-magic-line"></i>
-              <span>حساب خصومات التوصيل تلقائياً حسب قيمة الفاتورة</span>
-            </label>
-          </div>
-
-          <div class="offer-tier glass-inset full-width">
-            <div class="tier-head">
-              <i class="ri-award-line"></i>
-              <h4>العرض الأول (توصيل مخفض)</h4>
-            </div>
-            <div class="tier-grid">
-              <div class="form-group">
-                <label>إذا وصلت فاتورة العميل إلى (ريال):</label>
-                <div class="input-glass-wrap">
-                  <i class="ri-Mastercard-line"></i>
-                  <input type="number" id="tier1Threshold" min="1" placeholder="100">
-                </div>
-              </div>
-              <div class="form-group">
-                <label>يصبح سعر التوصيل (ريال):</label>
-                <div class="input-glass-wrap">
-                  <i class="ri-truck-line"></i>
-                  <input type="number" id="tier1Fee" min="0" placeholder="5">
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="offer-tier glass-inset full-width">
-            <div class="tier-head">
-              <i class="ri-gift-2-line"></i>
-              <h4>العرض الثاني (توصيل مجاني أو مخفض جداً)</h4>
-            </div>
-            <div class="tier-grid">
-              <div class="form-group">
-                <label>إذا وصلت فاتورة العميل إلى (ريال):</label>
-                <div class="input-glass-wrap">
-                  <i class="ri-vip-crown-line"></i>
-                  <input type="number" id="tier2Threshold" min="1" placeholder="300">
-                </div>
-              </div>
-              <div class="form-group">
-                <label>يصبح سعر التوصيل (ريال):</label>
-                <div class="input-glass-wrap">
-                  <i class="ri-truck-line"></i>
-                  <input type="number" id="tier2Fee" min="0" placeholder="0">
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="form-actions full-width">
-            <button type="submit" class="btn-primary-glass">
-              <i class="ri-check-double-line"></i>
-              <span>اعتماد وحفظ إعدادات العروض والتوصيل</span>
+              <i class="ri-arrow-down-s-line arrow-icon"></i>
             </button>
-          </div>
-        </form>
-      </section>
 
-      <!-- ==================== 4. قسم إدارة الأقسام ==================== -->
-      <section id="categoriesTab" class="tab-panel">
-        <div class="panel-header">
-          <div class="panel-title">
-            <i class="ri-layout-grid-line"></i>
-            <div>
-              <h2>أقسام وتصنيفات المتجر</h2>
-              <p class="sub-hint">أضف أو احذف أقسام المنتجات بكل سهولة</p>
+            <div class="accordion-content">
+              <form id="saStoreForm" class="form-grid">
+                <input type="hidden" id="saEditStoreId">
+
+                <div class="form-group">
+                  <label>اسم المتجر المعتمد *</label>
+                  <div class="input-glass-wrap">
+                    <i class="ri-store-2-line"></i>
+                    <input type="text" id="saStoreName" placeholder="مثال: محمصة نفال للقهوة المختصة" required>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label>تصنيف المتجر في سوق شرورة *</label>
+                  <div class="input-glass-wrap">
+                    <i class="ri-layout-grid-line"></i>
+                    <select id="saStoreCategory" required></select>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label>رمز فواتير المتجر (حرفين أو 3 بالإنجليزي) *</label>
+                  <div class="input-glass-wrap">
+                    <i class="ri-hashtag"></i>
+                    <input type="text" id="saStorePrefix" placeholder="NF" maxlength="4" dir="ltr" required>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label>رقم واتساب التاجر لاستقبال الطلبات *</label>
+                  <div class="input-glass-wrap">
+                    <i class="ri-whatsapp-line"></i>
+                    <input type="text" id="saStoreWhatsapp" placeholder="966500000000" dir="ltr" required>
+                  </div>
+                </div>
+
+                <!-- بيانات دخول التاجر -->
+                <div class="form-group">
+                  <label>اسم المستخدم (الأدمن) الخاص بالتاجر *</label>
+                  <div class="input-glass-wrap">
+                    <i class="ri-user-key-line"></i>
+                    <input type="text" id="saMerchantUsername" placeholder="merchant1" dir="ltr" required>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label>كلمة مرور التاجر *</label>
+                  <div class="input-glass-wrap">
+                    <i class="ri-key-2-line"></i>
+                    <input type="text" id="saMerchantPassword" placeholder="123456" dir="ltr" required>
+                  </div>
+                </div>
+
+                <!-- إدارة اشتراك التاجر -->
+                <div class="offer-tier glass-inset full-width">
+                  <div class="tier-head">
+                    <i class="ri-vip-crown-2-line"></i>
+                    <h4>بيانات اشتراك التاجر وحالة ظهور المتجر</h4>
+                  </div>
+                  <div class="form-grid">
+                    <div class="form-group">
+                      <label>نوع باقة الاشتراك *</label>
+                      <div class="input-glass-wrap">
+                        <i class="ri-medal-line"></i>
+                        <select id="saSubPlan">
+                          <option value="مجاني">اشتراك مجاني (دعم)</option>
+                          <option value="تجريبي">باقة تجريبية</option>
+                          <option value="شهري مدفوع">اشتراك شهري مدفوع</option>
+                          <option value="سنوي مدفوع">اشتراك سنوي مدفوع</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div class="form-group">
+                      <label>قيمة الاشتراك (ريال سعودي)</label>
+                      <div class="input-glass-wrap">
+                        <i class="ri-money-dollar-circle-line"></i>
+                        <input type="number" id="saSubPrice" min="0" placeholder="0" value="0">
+                      </div>
+                    </div>
+
+                    <div class="form-group">
+                      <label>تاريخ انتهاء الاشتراك *</label>
+                      <div class="input-glass-wrap">
+                        <i class="ri-calendar-event-line"></i>
+                        <input type="date" id="saSubExpiry" required>
+                      </div>
+                    </div>
+
+                    <div class="form-group">
+                      <label>حالة المتجر في المنصة *</label>
+                      <div class="input-glass-wrap">
+                        <i class="ri-Equalizer-line"></i>
+                        <select id="saStoreStatus">
+                          <option value="active">نشط ومفعل</option>
+                          <option value="maintenance">تحت الصيانة (منتهي الاشتراك / متوقف مؤقتاً)</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="form-actions full-width">
+                  <button type="submit" id="saSaveStoreBtn" class="btn-primary-glass">
+                    <i class="ri-save-3-line"></i>
+                    <span>حفظ المتجر واعتماد الاشتراك</span>
+                  </button>
+                  <button type="button" id="saResetStoreFormBtn" class="btn-glass">
+                    <i class="ri-refresh-line"></i>
+                    <span>تفريغ الحقول لمتجر جديد</span>
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
-        </div>
 
-        <div class="glass-panel form-card">
-          <div class="add-cat-row">
-            <div class="input-glass-wrap flex-1">
-              <i class="ri-folder-add-line"></i>
-              <input type="text" id="newCategoryInput" placeholder="اكتب اسم القسم الجديد (مثال: محاصيل فاخرة، أظرف قهوة، محمصة نفال...)">
-            </div>
-            <button type="button" id="addCategoryBtn" class="btn-primary-glass">
-              <i class="ri-add-line"></i>
-              <span>إضافة القسم</span>
-            </button>
-          </div>
-          <ul id="categoriesList" class="cat-list"></ul>
-        </div>
-      </section>
-
-      <!-- ==================== 5. قسم الإعدادات، الهوية، الشعار، والتواصل ==================== -->
-      <section id="settingsTab" class="tab-panel">
-        <div class="panel-header">
-          <div class="panel-title">
-            <i class="ri-settings-4-line"></i>
-            <div>
-              <h2>هوية المتجر والشعار وحسابات التواصل</h2>
-              <p class="sub-hint">تحكم كامل بالشعار، الاسم، الوصف، ورقم الواتساب وروابط التواصل الاجتماعي</p>
-            </div>
-          </div>
-        </div>
-
-        <form id="storeIdentityForm" class="glass-panel form-card form-grid">
-          <!-- قسم الشعار والهوية -->
-          <div class="full-width section-sub">
-            <i class="ri-palette-line"></i>
-            <h3>شعار المتجر، الاسم، والوصف التعريفي</h3>
-          </div>
-
-          <div class="form-group">
-            <label>اسم المتجر الرئيسي *</label>
-            <div class="input-glass-wrap">
-              <i class="ri-store-2-line"></i>
-              <input type="text" id="storeNameInput" placeholder="NAFAL Specialty Roast" required>
+          <div class="panel-header" style="margin-top: 28px;">
+            <div class="panel-title">
+              <i class="ri-building-4-line"></i>
+              <div>
+                <h2>المتاجر المسجلة في منصة نفال</h2>
+                <p class="sub-hint">اضغط على أي متجر لفتح ملفه الكامل، معرفة عدد منتجاته، وتجديد اشتراكه أو نسخ رابطه</p>
+              </div>
             </div>
           </div>
 
-          <div class="form-group">
-            <label>وصف المتجر (يظهر تحت اسم المتجر) *</label>
-            <div class="input-glass-wrap">
-              <i class="ri-file-text-line"></i>
-              <input type="text" id="storeDescInput" placeholder="نفال للقهوة المختصة والمحاصيل الفاخرة" required>
+          <!-- قائمة المتاجر المنسدلة -->
+          <div id="saStoresAccordionList" class="orders-accordion-list"></div>
+        </section>
+
+        <!-- تبويب 2: مراجعة طلبات تغيير أسماء المتاجر -->
+        <section id="saNameRequestsTab" class="tab-panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <i class="ri-shield-check-line"></i>
+              <div>
+                <h2>طلبات تغيير أسماء المتاجر (للمراجعة الأمنية)</h2>
+                <p class="sub-hint">لا يتغير اسم أي متجر للجمهور إلا بعد موافقتك المباشرة هنا</p>
+              </div>
+            </div>
+          </div>
+          <div id="saNameRequestsList" class="orders-accordion-list"></div>
+        </section>
+
+        <!-- تبويب 3: إعدادات سوق شرورة والمنصة العامة -->
+        <section id="saPlatformSettingsTab" class="tab-panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <i class="ri-compass-discover-line"></i>
+              <div>
+                <h2>إعدادات منصة نفال وسوق شرورة الشعبي</h2>
+                <p class="sub-hint">تحكم بإظهار أو إخفاء قسم المتاجر، وتعديل تصنيفات السوق وشعار المنصة</p>
+              </div>
             </div>
           </div>
 
-          <div class="form-group full-width">
-            <label>شعار المتجر (ارفع صورة الشعار أو ضع رابطه، أو اتركه فارغاً لأيقونة القهوة الفخمة)</label>
-            <div class="upload-zone glass-inset">
-              <i class="ri-upload-cloud-2-line"></i>
-              <input type="file" id="logoImageFile" accept="image/*">
-              <span id="logoUploadStatus">اضغط هنا لرفع صورة شعار جديد للمتجر</span>
+          <form id="saPlatformForm" class="glass-panel form-card form-grid">
+            <div class="form-group full-width">
+              <label class="checkbox-glass glass-inset">
+                <input type="checkbox" id="saShowMarketplaceToggle" checked>
+                <i class="ri-store-3-fill"></i>
+                <span>تفعيل وإظهار قسم "متاجر شرورة (السوق الشعبي)" للزوار في الواجهة العامة</span>
+              </label>
             </div>
-            <div class="logo-url-row" style="display:flex; gap:10px; margin-top:8px; flex-wrap:wrap;">
-              <div class="input-glass-wrap flex-1">
+
+            <div class="form-group">
+              <label>اسم المنصة الرئيسي *</label>
+              <div class="input-glass-wrap">
+                <i class="ri-Global-line"></i>
+                <input type="text" id="saPlatformName" value="سوق نفال — شرورة" required>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>العبارة الترحيبية (باللهجة الجنوبية/الخليجية) *</label>
+              <div class="input-glass-wrap">
+                <i class="ri-chat-smile-3-line"></i>
+                <input type="text" id="saPlatformSlogan" value="ارحبوا في سوق نفال.. كل متاجر وأسر شرورة بين يديك!" required>
+              </div>
+            </div>
+
+            <div class="form-group full-width">
+              <label>شريط التنبيه العلوي للمنصة *</label>
+              <div class="input-glass-wrap">
+                <i class="ri-map-pin-range-line"></i>
+                <input type="text" id="saPlatformBanner" value="التوصيل والخدمة مخصصة لأهلنا داخل شرورة فقط" required>
+              </div>
+            </div>
+
+            <div class="form-group full-width">
+              <label>شعار المنصة العام (اختياري)</label>
+              <div class="upload-zone glass-inset">
+                <i class="ri-upload-cloud-2-line"></i>
+                <input type="file" id="saPlatformLogoFile" accept="image/*">
+                <span id="saPlatformLogoStatus">اضغط لرفع شعار منصة نفال</span>
+              </div>
+              <div class="input-glass-wrap" style="margin-top:8px;">
                 <i class="ri-link"></i>
-                <input type="text" id="storeLogoUrlInput" placeholder="رابط صورة الشعار يظهر هنا تلقائياً بعد الرفع">
+                <input type="text" id="saPlatformLogoUrl" placeholder="رابط الشعار يظهر هنا تلقائياً">
               </div>
-              <button type="button" id="clearLogoBtn" class="btn-glass">
-                <i class="ri-delete-back-2-line"></i>
-                <span>استخدام أيقونة القهوة الافتراضية</span>
+            </div>
+
+            <div class="form-actions full-width">
+              <button type="submit" class="btn-primary-glass">
+                <i class="ri-save-3-line"></i>
+                <span>حفظ إعدادات المنصة العامة</span>
               </button>
             </div>
-            <img id="logoPreviewImg" src="" alt="معاينة الشعار" class="img-preview hidden">
-          </div>
+          </form>
 
-          <!-- قسم الواتساب وحسابات التواصل الاجتماعي -->
-          <div class="full-width section-sub" style="margin-top: 14px;">
-            <i class="ri-share-forward-box-line"></i>
-            <h3>رقم واتساب الطلبات وحسابات مواقع التواصل الاجتماعي</h3>
+          <!-- إدارة تصنيفات السوق الشعبي -->
+          <div class="glass-panel form-card" style="margin-top: 24px;">
+            <div class="section-sub" style="margin-bottom: 14px;">
+              <i class="ri-layout-masonry-line"></i>
+              <h3>تصنيفات المتاجر في السوق الرئيسي (مثل: متاجر القهوة، متاجر العسل، الحلى...)</h3>
+            </div>
+            <div class="add-cat-row">
+              <div class="input-glass-wrap flex-1">
+                <i class="ri-folder-add-line"></i>
+                <input type="text" id="saNewMarketCatInput" placeholder="اكتب تصنيف متاجر جديد...">
+              </div>
+              <button type="button" id="saAddMarketCatBtn" class="btn-primary-glass">
+                <i class="ri-add-line"></i>
+                <span>إضافة تصنيف للسوق</span>
+              </button>
+            </div>
+            <ul id="saMarketCategoriesList" class="cat-list"></ul>
           </div>
+        </section>
 
-          <div class="form-group full-width">
-            <label>رقم واتساب المتجر المخصص لاستقبال الفواتير (مع مفتاح الدولة 966 بدون +) *</label>
-            <div class="input-glass-wrap">
-              <i class="ri-whatsapp-line"></i>
-              <input type="text" id="whatsappNumberInput" placeholder="966500000000" dir="ltr" required>
+        <!-- تبويب 4: أمان وبيانات دخول الإدارة العليا -->
+        <section id="saSecurityTab" class="tab-panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <i class="ri-admin-line"></i>
+              <div>
+                <h2>بيانات دخولي (الإدارة العليا - أبو تركي)</h2>
+                <p class="sub-hint">عدّل اسم المستخدم وكلمة المرور الخاصة بك في أي وقت</p>
+              </div>
             </div>
           </div>
 
-          <div class="form-group">
-            <label>رابط حساب سناب شات (Snapchat)</label>
-            <div class="input-glass-wrap">
-              <i class="ri-snapchat-line"></i>
-              <input type="url" id="snapchatUrlInput" placeholder="https://www.snapchat.com/add/..." dir="ltr">
+          <form id="saCredentialsForm" class="glass-panel form-card form-grid">
+            <div class="form-group">
+              <label>اسم المستخدم الجديد للأدمن الأعلى *</label>
+              <div class="input-glass-wrap">
+                <i class="ri-user-star-line"></i>
+                <input type="text" id="saAdminNewUser" dir="ltr" required>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>كلمة المرور الجديدة *</label>
+              <div class="input-glass-wrap">
+                <i class="ri-lock-password-line"></i>
+                <input type="text" id="saAdminNewPass" dir="ltr" required>
+              </div>
+            </div>
+
+            <div class="form-actions full-width">
+              <button type="submit" class="btn-primary-glass">
+                <i class="ri-shield-keyhole-line"></i>
+                <span>تحديث بيانات دخولي الآن</span>
+              </button>
+            </div>
+          </form>
+        </section>
+
+      </div>
+
+      <!-- ========================================================================= -->
+      <!-- 2. قسم التاجر (Merchant View - صاحب المحل) -->
+      <!-- ========================================================================= -->
+      <div id="merchantView" class="role-view hidden">
+
+        <!-- شريط اشتراك التاجر وحالة متجره السريعة -->
+        <div class="merchant-top-banner glass-panel">
+          <div class="m-sub-info">
+            <i class="ri-vip-crown-fill"></i>
+            <div>
+              <strong id="mSubBannerTitle">باقة الاشتراك: جاري التحميل...</strong>
+              <p id="mSubBannerExpiry">تاريخ الانتهاء: -- | رمز فواتيرك: <span id="mPrefixDisplay">NF</span></p>
             </div>
           </div>
 
-          <div class="form-group">
-            <label>رابط حساب تيك توك (TikTok)</label>
-            <div class="input-glass-wrap">
-              <i class="ri-tiktok-line"></i>
-              <input type="url" id="tiktokUrlInput" placeholder="https://www.tiktok.com/@..." dir="ltr">
-            </div>
-          </div>
-
-          <div class="form-group">
-            <label>رابط حساب إنستغرام (Instagram)</label>
-            <div class="input-glass-wrap">
-              <i class="ri-instagram-line"></i>
-              <input type="url" id="instagramUrlInput" placeholder="https://www.instagram.com/..." dir="ltr">
-            </div>
-          </div>
-
-          <div class="form-group">
-            <label>رابط حساب منصة إكس / تويتر (X)</label>
-            <div class="input-glass-wrap">
-              <i class="ri-twitter-x-line"></i>
-              <input type="url" id="twitterUrlInput" placeholder="https://x.com/..." dir="ltr">
-            </div>
-          </div>
-
-          <div class="form-group full-width">
-            <label>رابط موقع المحمصة / المتجر على خرائط قوقل (اختياري)</label>
-            <div class="input-glass-wrap">
-              <i class="ri-map-pin-2-line"></i>
-              <input type="url" id="mapsUrlInput" placeholder="https://maps.google.com/..." dir="ltr">
-            </div>
-          </div>
-
-          <div class="form-actions full-width">
-            <button type="submit" id="saveIdentityBtn" class="btn-primary-glass">
-              <i class="ri-save-3-line"></i>
-              <span>حفظ الهوية والشعار وحسابات التواصل</span>
+          <div class="m-quick-actions">
+            <button type="button" id="mCopyStoreLinkBtn" class="btn-glass-sm">
+              <i class="ri-share-box-line"></i>
+              <span>نسخ رابط متجري</span>
             </button>
           </div>
-        </form>
-      </section>
+        </div>
 
-    </main>
+        <!-- إحصائيات التاجر السريعة -->
+        <div class="stats-grid">
+          <div class="stat-card glass-panel">
+            <div class="stat-icon success"><i class="ri-coins-line"></i></div>
+            <div>
+              <small>مبيعاتك المنجزة (ريال)</small>
+              <h3 id="mStatRevenue">0</h3>
+            </div>
+          </div>
+          <div class="stat-card glass-panel">
+            <div class="stat-icon warning"><i class="ri-time-line"></i></div>
+            <div>
+              <small>طلبات جديدة بانتظارك</small>
+              <h3 id="mStatNewOrders">0</h3>
+            </div>
+          </div>
+          <div class="stat-card glass-panel">
+            <div class="stat-icon"><i class="ri-checkbox-circle-line"></i></div>
+            <div>
+              <small>طلبات تم توصيلها</small>
+              <h3 id="mStatCompletedOrders">0</h3>
+            </div>
+          </div>
+          <div class="stat-card glass-panel">
+            <div class="stat-icon"><i class="ri-star-smile-line"></i></div>
+            <div>
+              <small>تقييم متجرك</small>
+              <h3 id="mStatRating">5.0 ★</h3>
+            </div>
+          </div>
+        </div>
+
+        <!-- شريط تنقل التاجر -->
+        <nav class="nav-bar glass-panel" id="mNavBar">
+          <button type="button" class="nav-btn active" data-tab="mOrdersTab">
+            <i class="ri-file-list-3-line"></i>
+            <span>الفواتير والطلبات</span>
+            <span id="mOrdersBadge" class="badge">0</span>
+          </button>
+          <button type="button" class="nav-btn" data-tab="mProductsTab">
+            <i class="ri-shopping-bag-3-line"></i>
+            <span>المنتجات والبكجات</span>
+          </button>
+          <button type="button" class="nav-btn" data-tab="mWorkAndOffersTab">
+            <i class="ri-time-line"></i>
+            <span>الدوام، التوصيل، والعروض</span>
+          </button>
+          <button type="button" class="nav-btn" data-tab="mStaffTab">
+            <i class="ri-team-line"></i>
+            <span>الموظفين والمناديب</span>
+          </button>
+          <button type="button" class="nav-btn" data-tab="mSettingsTab">
+            <i class="ri-store-2-line"></i>
+            <span>هوية متجري وحسابي</span>
+          </button>
+        </nav>
+
+        <!-- تبويب التاجر 1: الفواتير والطلبات -->
+        <section id="mOrdersTab" class="tab-panel active">
+          <div class="panel-header">
+            <div class="panel-title">
+              <i class="ri-shopping-bag-3-line"></i>
+              <div>
+                <h2>فواتير وطلبات متجرك</h2>
+                <p class="sub-hint">اضغط على أي فاتورة لفتحها وتغيير حالتها من القائمة الكبيرة الواضحة</p>
+              </div>
+            </div>
+
+            <div class="status-filter-pills" id="mOrderFilterBar">
+              <button type="button" class="filter-pill active" data-status="all">الكل</button>
+              <button type="button" class="filter-pill" data-status="جديد - قيد المراجعة">قيد المراجعة</button>
+              <button type="button" class="filter-pill" data-status="جاري التجهيز">جاري التجهيز</button>
+              <button type="button" class="filter-pill" data-status="جاهز للمندوب">جاهز للمندوب</button>
+              <button type="button" class="filter-pill" data-status="مع المندوب للتوصيل">مع المندوب</button>
+              <button type="button" class="filter-pill" data-status="تم التوصيل">تم التوصيل</button>
+              <button type="button" class="filter-pill" data-status="ملغي">ملغي</button>
+            </div>
+          </div>
+
+          <div id="mOrdersAccordionList" class="orders-accordion-list"></div>
+        </section>
+
+        <!-- تبويب التاجر 2: إدارة المنتجات والبكجات (حتى 4 صور للمنتج) -->
+        <section id="mProductsTab" class="tab-panel">
+          <div class="accordion-card glass-panel open" id="mProductFormAccordion">
+            <button type="button" class="accordion-trigger" id="toggleMProductFormBtn">
+              <div class="trigger-right">
+                <i class="ri-add-circle-line"></i>
+                <span id="mFormAccordionTitle">إضافة منتج أو بكج عرض جديد</span>
+              </div>
+              <i class="ri-arrow-down-s-line arrow-icon"></i>
+            </button>
+
+            <div class="accordion-content">
+              <form id="mProductForm" class="form-grid">
+                <input type="hidden" id="mEditProductId">
+
+                <div class="form-group">
+                  <label>اسم المنتج أو البكج *</label>
+                  <div class="input-glass-wrap">
+                    <i class="ri-price-tag-3-line"></i>
+                    <input type="text" id="mProdName" placeholder="مثال: بكج الضيافة الفاخر / محصول إثيوبي" required>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label>نوع العرض *</label>
+                  <div class="input-glass-wrap">
+                    <i class="ri-gift-line"></i>
+                    <select id="mProdType">
+                      <option value="regular">منتج مفرد عادي</option>
+                      <option value="bundle">🔥 بكج توفير / عرض خاص</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label>قسم المنتج داخل متجرك *</label>
+                  <div class="input-glass-wrap">
+                    <i class="ri-layout-grid-line"></i>
+                    <select id="mProdCategory" required></select>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label>السعر الحالي (ريال) *</label>
+                  <div class="input-glass-wrap">
+                    <i class="ri-money-dollar-circle-line"></i>
+                    <input type="number" id="mProdPrice" step="0.5" min="1" placeholder="45" required>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label>السعر قبل الخصم (اختياري لإبراز العرض)</label>
+                  <div class="input-glass-wrap">
+                    <i class="ri-percent-line"></i>
+                    <input type="number" id="mProdOldPrice" step="0.5" min="0" placeholder="60">
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label>الكمية المتوفرة بالمخزون *</label>
+                  <div class="input-glass-wrap">
+                    <i class="ri-archive-stack-line"></i>
+                    <input type="number" id="mProdStock" min="0" placeholder="30" required>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label>الوزن / الحجم (اختياري)</label>
+                  <div class="input-glass-wrap">
+                    <i class="ri-scales-3-line"></i>
+                    <input type="text" id="mProdWeight" placeholder="مثال: 250 جرام / 1 كيلو">
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label>الإيحاءات / المكونات البارزة (اختياري)</label>
+                  <div class="input-glass-wrap">
+                    <i class="ri-sparkling-line"></i>
+                    <input type="text" id="mProdNotes" placeholder="مثال: شوكولاتة، كراميل، هيل فاخر">
+                  </div>
+                </div>
+
+                <div class="form-group full-width">
+                  <label>الوصف الكامل والتفصيلي للمنتج (يظهر في صفحة المنتج المستقلة)</label>
+                  <div class="input-glass-wrap">
+                    <textarea id="mProdDesc" rows="3" placeholder="اكتب كل تفاصيل المنتج أو محتويات البكج هنا..."></textarea>
+                  </div>
+                </div>
+
+                <!-- رفع حتى 4 صور للمنتج -->
+                <div class="form-group full-width">
+                  <label>صور المنتج (الحد الأقصى 4 صور — تُضغط وتُرفع تلقائياً)</label>
+                  <div class="upload-zone glass-inset">
+                    <i class="ri-gallery-upload-line"></i>
+                    <input type="file" id="mProdImagesInput" accept="image/*" multiple>
+                    <span id="mUploadStatus">اضغط لاختيار صورة أو عدة صور (حتى 4 صور للمنتج)</span>
+                  </div>
+                  <div id="mImagesPreviewRow" class="multi-preview-row"></div>
+                </div>
+
+                <div class="form-group full-width">
+                  <label class="checkbox-glass glass-inset">
+                    <input type="checkbox" id="mProdFreeDelivery">
+                    <i class="ri-truck-line"></i>
+                    <span>هذا المنتج أو البكج معفي من رسوم التوصيل (توصيل مجاني خاص به)</span>
+                  </label>
+                </div>
+
+                <div class="form-actions full-width">
+                  <button type="submit" id="mSaveProductBtn" class="btn-primary-glass">
+                    <i class="ri-save-3-line"></i>
+                    <span>حفظ المنتج في متجري</span>
+                  </button>
+                  <button type="button" id="mResetProductBtn" class="btn-glass">
+                    <i class="ri-refresh-line"></i>
+                    <span>تفريغ الحقول</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <div class="panel-header" style="margin-top: 28px;">
+            <div class="panel-title">
+              <i class="ri-layout-grid-fill"></i>
+              <h2>منتجات وبكجات متجرك (شبكي متناسق)</h2>
+            </div>
+          </div>
+          <div id="mProductsList" class="products-grid"></div>
+        </section>
+
+        <!-- تبويب التاجر 3: أوقات الدوام، التوصيل، والعروض -->
+        <section id="mWorkAndOffersTab" class="tab-panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <i class="ri-time-line"></i>
+              <div>
+                <h2>أوقات الدوام، الحد الأدنى للطلب، وعروض التوصيل</h2>
+                <p class="sub-hint">إذا كان متجرك مغلقاً، يقدر الزبون يعبي سلته لكن النظام يطلب منه الانتظار حتى يفتح المحل</p>
+              </div>
+            </div>
+          </div>
+
+          <form id="mWorkOffersForm" class="glass-panel form-card form-grid">
+            
+            <!-- نظام أوقات الدوام الذكي -->
+            <div class="offer-tier glass-inset full-width">
+              <div class="tier-head">
+                <i class="ri-time-fill"></i>
+                <h4>حالة المحل وساعات الدوام</h4>
+              </div>
+              <div class="form-grid">
+                <div class="form-group full-width">
+                  <label>نظام فتح وإغلاق المتجر *</label>
+                  <div class="input-glass-wrap">
+                    <i class="ri-door-open-line"></i>
+                    <select id="mWorkMode">
+                      <option value="24h">مفتوح 24 ساعة (يستقبل الطلبات دائماً)</option>
+                      <option value="schedule">حسب ساعات الدوام المحددة بالأسفل تلقائياً</option>
+                      <option value="closed">مغلق مؤقتاً الآن (الزبون يضيف للسلة ولا يرسل الطلب حتى نفتح)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label>بداية الدوام (يفتح الساعة):</label>
+                  <div class="input-glass-wrap">
+                    <i class="ri-sun-line"></i>
+                    <input type="time" id="mOpenTime" value="08:00">
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label>نهاية الدوام (يغلق الساعة):</label>
+                  <div class="input-glass-wrap">
+                    <i class="ri-moon-line"></i>
+                    <input type="time" id="mCloseTime" value="23:30">
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- إعدادات التوصيل والحد الأدنى -->
+            <div class="form-group">
+              <label>رمز فواتير متجرك (حرفين أو 3 بالإنجليزي) *</label>
+              <div class="input-glass-wrap">
+                <i class="ri-hashtag"></i>
+                <input type="text" id="mInvoicePrefix" placeholder="NF" maxlength="4" dir="ltr" required>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>الحد الأدنى للطلب من متجرك (ريال) *</label>
+              <div class="input-glass-wrap">
+                <i class="ri-shopping-basket-2-line"></i>
+                <input type="number" id="mMinOrderAmount" min="0" placeholder="25" value="0" required>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>سعر التوصيل الأساسي داخل شرورة (ريال) *</label>
+              <div class="input-glass-wrap">
+                <i class="ri-e-bike-2-line"></i>
+                <input type="number" id="mBaseDeliveryFee" min="0" placeholder="15" value="15" required>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>تفعيل عروض خصم التوصيل</label>
+              <label class="checkbox-glass glass-inset">
+                <input type="checkbox" id="mEnableSmartOffers" checked>
+                <span>تطبيق خصومات التوصيل تلقائياً في سلة متجري</span>
+              </label>
+            </div>
+
+            <div class="form-group full-width">
+              <label>رسالة العرض الترويجي في متجرك</label>
+              <div class="input-glass-wrap">
+                <i class="ri-megaphone-line"></i>
+                <input type="text" id="mPromoMessage" placeholder="اطلب بـ 100 ريال والتوصيل بـ 5 ريال! وعند الطلب بـ 300 ريال التوصيل مجاني!">
+              </div>
+            </div>
+
+            <div class="offer-tier glass-inset">
+              <div class="tier-head">
+                <i class="ri-award-line"></i>
+                <h4>العرض الأول (توصيل مخفض)</h4>
+              </div>
+              <div class="form-group">
+                <label>إذا وصلت سلة الزبون إلى (ريال):</label>
+                <div class="input-glass-wrap"><input type="number" id="mTier1Threshold" value="100"></div>
+              </div>
+              <div class="form-group" style="margin-top:8px;">
+                <label>يصبح التوصيل (ريال):</label>
+                <div class="input-glass-wrap"><input type="number" id="mTier1Fee" value="5"></div>
+              </div>
+            </div>
+
+            <div class="offer-tier glass-inset">
+              <div class="tier-head">
+                <i class="ri-gift-2-line"></i>
+                <h4>العرض الثاني (توصيل مجاني)</h4>
+              </div>
+              <div class="form-group">
+                <label>إذا وصلت سلة الزبون إلى (ريال):</label>
+                <div class="input-glass-wrap"><input type="number" id="mTier2Threshold" value="300"></div>
+              </div>
+              <div class="form-group" style="margin-top:8px;">
+                <label>يصبح التوصيل (ريال):</label>
+                <div class="input-glass-wrap"><input type="number" id="mTier2Fee" value="0"></div>
+              </div>
+            </div>
+
+            <div class="form-actions full-width">
+              <button type="submit" class="btn-primary-glass">
+                <i class="ri-check-double-line"></i>
+                <span>حفظ أوقات الدوام وعروض التوصيل</span>
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <!-- تبويب التاجر 4: إدارة الموظفين والمناديب -->
+        <section id="mStaffTab" class="tab-panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <i class="ri-team-line"></i>
+              <div>
+                <h2>إدارة الموظفين ومناديب التوصيل</h2>
+                <p class="sub-hint">أنشئ حساب لمندوبك أو موظف التجهيز. الموظف يدخل من نفس البوابة ويشوف الطلبات فقط، ولا يقدر يغير كلمة مروره إلا أنت</p>
+              </div>
+            </div>
+          </div>
+
+          <form id="mStaffForm" class="glass-panel form-card form-grid">
+            <input type="hidden" id="mEditStaffId">
+
+            <div class="form-group">
+              <label>اسم الموظف / المندوب (يظهر للعميل عند التوصيل) *</label>
+              <div class="input-glass-wrap">
+                <i class="ri-user-smile-line"></i>
+                <input type="text" id="mStaffName" placeholder="مثال: محمد العوبل" required>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>رقم جوال المندوب (يظهر للعميل ليتواصل معه) *</label>
+              <div class="input-glass-wrap">
+                <i class="ri-smartphone-line"></i>
+                <input type="tel" id="mStaffPhone" placeholder="05XXXXXXXX" dir="ltr" required>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>المهمة / الصلاحية *</label>
+              <div class="input-glass-wrap">
+                <i class="ri-e-bike-2-line"></i>
+                <select id="mStaffRole">
+                  <option value="مندوب توصيل">مندوب توصيل وتحديث طلبات</option>
+                  <option value="موظف تجهيز">موظف تجهيز وتعبئة طلبات</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>اسم المستخدم (الأدمن) للموظف *</label>
+              <div class="input-glass-wrap">
+                <i class="ri-user-key-line"></i>
+                <input type="text" id="mStaffUsername" placeholder="courier1" dir="ltr" required>
+              </div>
+            </div>
+
+            <div class="form-group full-width">
+              <label>كلمة مرور الموظف (أنت فقط من يملك صلاحية تغييرها) *</label>
+              <div class="input-glass-wrap">
+                <i class="ri-lock-password-line"></i>
+                <input type="text" id="mStaffPassword" placeholder="123456" dir="ltr" required>
+              </div>
+            </div>
+
+            <div class="form-actions full-width">
+              <button type="submit" id="mSaveStaffBtn" class="btn-primary-glass">
+                <i class="ri-user-add-line"></i>
+                <span>حفظ بيانات الموظف</span>
+              </button>
+              <button type="button" id="mResetStaffBtn" class="btn-glass">
+                <i class="ri-refresh-line"></i>
+                <span>تفريغ</span>
+              </button>
+            </div>
+          </form>
+
+          <div id="mStaffList" class="orders-accordion-list" style="margin-top: 22px;"></div>
+        </section>
+
+        <!-- تبويب التاجر 5: هوية المتجر، الموقع الجغرافي، الأقسام، وحساب التاجر -->
+        <section id="mSettingsTab" class="tab-panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <i class="ri-store-2-line"></i>
+              <h2>هوية المتجر، موقع المحل، وبيانات الدخول</h2>
+            </div>
+          </div>
+
+          <!-- طلب تغيير اسم المتجر (يخضع لمراجعة الإدارة العليا) -->
+          <div class="glass-panel form-card" style="margin-bottom: 22px;">
+            <div class="section-sub" style="margin-bottom: 12px;">
+              <i class="ri-shield-star-line"></i>
+              <h3>طلب تغيير اسم المتجر (يخضع لموافقة الإدارة العليا للأمان)</h3>
+            </div>
+            <div class="add-cat-row">
+              <div class="input-glass-wrap flex-1">
+                <i class="ri-store-line"></i>
+                <input type="text" id="mRequestedStoreName" placeholder="اكتب الاسم الجديد المقترح لمتجرك...">
+              </div>
+              <button type="button" id="mSendNameRequestBtn" class="btn-primary-glass">
+                <i class="ri-send-plane-fill"></i>
+                <span>إرسال الطلب للإدارة العليا</span>
+              </button>
+            </div>
+            <small id="mPendingNameHint" class="sub-hint"></small>
+          </div>
+
+          <!-- نموذج الهوية والموقع والتواصل -->
+          <form id="mIdentityForm" class="glass-panel form-card form-grid" style="margin-bottom: 22px;">
+            <div class="full-width section-sub">
+              <i class="ri-palette-line"></i>
+              <h3>شعار المتجر، الوصف، وموقع المحل على الخريطة</h3>
+            </div>
+
+            <div class="form-group full-width">
+              <label>وصف المتجر التعريفي (يظهر للزباين تحت اسم محلك)</label>
+              <div class="input-glass-wrap">
+                <i class="ri-file-text-line"></i>
+                <input type="text" id="mStoreDescInput" placeholder="مثال: مختصون بالقهوة المختصة والحلى الطازج يومياً في شرورة">
+              </div>
+            </div>
+
+            <div class="form-group full-width">
+              <label>شعار متجرك (ارفع شعارك الخاص ليظهر بفخر في السوق وفي فواتيرك)</label>
+              <div class="upload-zone glass-inset">
+                <i class="ri-image-add-line"></i>
+                <input type="file" id="mLogoFileInput" accept="image/*">
+                <span id="mLogoUploadStatus">اضغط هنا لرفع صورة شعار متجرك</span>
+              </div>
+              <div class="input-glass-wrap" style="margin-top:8px;">
+                <i class="ri-link"></i>
+                <input type="text" id="mStoreLogoUrl" placeholder="رابط شعار المتجر">
+              </div>
+              <img id="mLogoPreview" src="" alt="شعار المتجر" class="img-preview hidden">
+            </div>
+
+            <div class="form-group">
+              <label>رقم واتساب استقبال فواتير الزباين (مع 966 بدون +) *</label>
+              <div class="input-glass-wrap">
+                <i class="ri-whatsapp-line"></i>
+                <input type="text" id="mWhatsappInput" placeholder="966500000000" dir="ltr" required>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>موقع المحل الجغرافي (ليزورك الزباين على الواقع)</label>
+              <div style="display:flex; gap:8px;">
+                <button type="button" id="mCaptureGpsBtn" class="btn-glass" style="white-space:nowrap;">
+                  <i class="ri-compass-3-line"></i><span>تحديد موقعي</span>
+                </button>
+                <div class="input-glass-wrap flex-1">
+                  <i class="ri-map-pin-2-line"></i>
+                  <input type="text" id="mMapsUrlInput" placeholder="أو الصق رابط خرائط قوقل هنا" dir="ltr">
+                </div>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>رابط سناب شات</label>
+              <div class="input-glass-wrap">
+                <i class="ri-snapchat-line"></i>
+                <input type="url" id="mSnapInput" placeholder="https://snapchat.com/add/..." dir="ltr">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>رابط تيك توك</label>
+              <div class="input-glass-wrap">
+                <i class="ri-tiktok-line"></i>
+                <input type="url" id="mTiktokInput" placeholder="https://tiktok.com/@..." dir="ltr">
+              </div>
+            </div>
+
+            <div class="form-group full-width">
+              <label>رابط إنستغرام</label>
+              <div class="input-glass-wrap">
+                <i class="ri-instagram-line"></i>
+                <input type="url" id="mInstaInput" placeholder="https://instagram.com/..." dir="ltr">
+              </div>
+            </div>
+
+            <div class="form-actions full-width">
+              <button type="submit" class="btn-primary-glass">
+                <i class="ri-save-3-line"></i>
+                <span>حفظ هوية المتجر وموقع المحل</span>
+              </button>
+            </div>
+          </form>
+
+          <!-- أقسام المتجر الداخلية -->
+          <div class="glass-panel form-card" style="margin-bottom: 22px;">
+            <div class="section-sub" style="margin-bottom: 12px;">
+              <i class="ri-folders-line"></i>
+              <h3>أقسام المنتجات داخل متجرك</h3>
+            </div>
+            <div class="add-cat-row">
+              <div class="input-glass-wrap flex-1">
+                <i class="ri-folder-add-line"></i>
+                <input type="text" id="mNewCatInput" placeholder="اسم القسم الجديد داخل متجرك...">
+              </div>
+              <button type="button" id="mAddCatBtn" class="btn-primary-glass">
+                <i class="ri-add-line"></i><span>إضافة قسم</span>
+              </button>
+            </div>
+            <ul id="mCategoriesList" class="cat-list"></ul>
+          </div>
+
+          <!-- تغيير بيانات دخول التاجر -->
+          <form id="mCredentialsForm" class="glass-panel form-card form-grid">
+            <div class="full-width section-sub">
+              <i class="ri-key-2-line"></i>
+              <h3>تغيير اسم المستخدم وكلمة المرور الخاصة بك كتاجر</h3>
+            </div>
+            <div class="form-group">
+              <label>اسم المستخدم (الأدمن) الجديد *</label>
+              <div class="input-glass-wrap">
+                <i class="ri-user-line"></i>
+                <input type="text" id="mSelfNewUser" dir="ltr" required>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>كلمة المرور الجديدة *</label>
+              <div class="input-glass-wrap">
+                <i class="ri-lock-line"></i>
+                <input type="text" id="mSelfNewPass" dir="ltr" required>
+              </div>
+            </div>
+            <div class="form-actions full-width">
+              <button type="submit" class="btn-primary-glass">
+                <i class="ri-check-line"></i><span>تحديث بيانات دخولي</span>
+              </button>
+            </div>
+          </form>
+        </section>
+
+      </div>
+
+      <!-- ========================================================================= -->
+      <!-- 3. قسم الموظف / مندوب التوصيل (Staff / Courier View) -->
+      <!-- ========================================================================= -->
+      <div id="staffView" class="role-view hidden">
+        <div class="panel-header">
+          <div class="panel-title">
+            <i class="ri-e-bike-2-fill"></i>
+            <div>
+              <h2 id="staffWelcomeTitle">لوحة مهام التوصيل والتجهيز</h2>
+              <p class="sub-hint">اضغط على أي طلب لفتحه، واستلامه للتوصيل، أو فتح موقع العميل على الخريطة</p>
+            </div>
+          </div>
+
+          <div class="status-filter-pills" id="staffFilterBar">
+            <button type="button" class="filter-pill active" data-status="active">الطلبات الحالية الجاهزة</button>
+            <button type="button" class="filter-pill" data-status="تم التوصيل">طلبات وصلتها</button>
+          </div>
+        </div>
+
+        <div id="staffOrdersAccordionList" class="orders-accordion-list"></div>
+      </div>
+
+    </div>
   </div>
 
-  <!-- إشعار عائم زجاجي كبير وواضح -->
+  <!-- إشعار عائم زجاجي -->
   <div id="toast" class="toast glass-pill hidden">
     <i class="ri-checkbox-circle-fill"></i>
     <span id="toastText">تم الحفظ بنجاح</span>

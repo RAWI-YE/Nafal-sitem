@@ -3,7 +3,7 @@ import {
   initializeFirestore, getFirestore, collection, doc, setDoc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, query, where 
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-// 1. إعدادات فايربيس ومفتاح رفع الصور الثابتة
+// 1. إعدادات الاتصال السريع والطبيعي بقاعدة البيانات
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyAtCSiIDDN9nceKMj2xZbjREy9qXFEv68k",
   authDomain: "rawi-ye02.firebaseapp.com",
@@ -14,7 +14,8 @@ const FIREBASE_CONFIG = {
   measurementId: "G-0RDKKNKSJJ"
 };
 
-const IMGBB_API_KEY = "0fbdc2c45d1d7098137c923129bd25b7";
+const DEFAULT_IMGBB_KEY = "0fbdc2c45d1d7098137c923129bd25b7";
+const DEFAULT_UPLOAD_ENDPOINT = "https://api.imgbb.com/1/upload";
 const DEFAULT_PRODUCT_IMG = "https://images.unsplash.com/photo-1559056199-641a0ac8b55e?auto=format&fit=crop&w=800&q=80";
 
 let app;
@@ -22,7 +23,6 @@ let db;
 if (getApps().length === 0) {
   app = initializeApp(FIREBASE_CONFIG);
   db = initializeFirestore(app, {
-    experimentalForceLongPolling: true,
     ignoreUndefinedProperties: true
   });
 } else {
@@ -30,11 +30,59 @@ if (getApps().length === 0) {
   db = getFirestore(app);
 }
 
-// متغيرات الجلسة الحالية والبيانات الحية
-let currentSession = null; // { role: 'superadmin' | 'merchant' | 'staff', storeId, staffId, username, name, phone, staffRole }
-let activeUnsubscribers = [];
+// متغيرات مفتاح الـ API الديناميكية (تُحدث من خزنة الإدارة العليا)
+let dynamicImgbbApiKey = DEFAULT_IMGBB_KEY;
+let dynamicUploadEndpoint = DEFAULT_UPLOAD_ENDPOINT;
 
-// حالات الطلب المعتمدة مع الأيقونات والألوان
+// متغيرات الجلسة والأمان الحالية
+let currentSession = null; 
+// { role: 'superadmin'|'merchant'|'staff', docId, storeId, username, name, phone, staffRole, pinCode, trustedDevices }
+let activeUnsubscribers = [];
+let enteredPinBuffer = "";
+let isPinLocked = false;
+let idleLockTimer = null;
+const IDLE_LOCK_TIMEOUT_MS = 5 * 60 * 1000; // قفل تلقائي بعد 5 دقائق خمول
+
+// حماية النصوص من ثغرات XSS
+function escapeHtml(str) {
+  if (str === null || str === undefined) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+// توليد أو جلب البصمة الفريدة للجهاز الحالي (Device ID)
+function getOrCreateDeviceId() {
+  let devId = localStorage.getItem("nafal_trusted_device_id");
+  if (!devId) {
+    devId = "DEV-" + Date.now().toString(36).toUpperCase() + "-" + Math.random().toString(36).substring(2, 8).toUpperCase();
+    localStorage.setItem("nafal_trusted_device_id", devId);
+  }
+  return devId;
+}
+
+function getDeviceFriendlyName() {
+  const ua = navigator.userAgent || "";
+  let os = "جهاز ذكي";
+  if (/android/i.test(ua)) os = "جوال أندرويد";
+  else if (/iPad|iPhone|iPod/.test(ua)) os = "جهاز آيفون / آيباد";
+  else if (/CrOS/.test(ua)) os = "لابتوب ChromeOS";
+  else if (/Win/.test(ua)) os = "كمبيوتر ويندوز";
+  else if (/Mac/.test(ua)) os = "جهاز ماك";
+
+  let browser = "متصفح ويب";
+  if (/Edg\//.test(ua)) browser = "Edge";
+  else if (/Chrome\//.test(ua)) browser = "Chrome";
+  else if (/Safari\//.test(ua) && !/Chrome\//.test(ua)) browser = "Safari";
+  else if (/Firefox\//.test(ua)) browser = "Firefox";
+
+  return `${os} (${browser})`;
+}
+
+// حالات الطلب المعتمدة
 const ORDER_STATUS_LIST = [
   { value: "جديد - قيد المراجعة", icon: "ri-time-fill", cssClass: "status-new" },
   { value: "جاري التجهيز", icon: "ri-fire-fill", cssClass: "status-prep" },
@@ -48,11 +96,15 @@ function getStatusMeta(statusVal) {
   return ORDER_STATUS_LIST.find(s => s.value === statusVal) || ORDER_STATUS_LIST[0];
 }
 
+let toastTimer = null;
 function showToast(msg) {
   const toast = document.getElementById("toast");
-  document.getElementById("toastText").textContent = msg;
+  const toastText = document.getElementById("toastText");
+  if (!toast || !toastText) return;
+  toastText.textContent = msg;
   toast.classList.remove("hidden");
-  setTimeout(() => toast.classList.add("hidden"), 3200);
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.add("hidden"), 3000);
 }
 
 function clearSubscriptions() {
@@ -62,7 +114,9 @@ function clearSubscriptions() {
   activeUnsubscribers = [];
 }
 
-// 2. ضغط ورفع الصور إلى ImgBB
+// ============================================================================
+// 2. ضغط ورفع الصور باستخدام مفتاح الـ API الديناميكي المحفوظ في القاعدة
+// ============================================================================
 function compressImage(file, maxWidth = 850, quality = 0.82) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -91,46 +145,79 @@ function compressImage(file, maxWidth = 850, quality = 0.82) {
   });
 }
 
+async function fetchLatestApiKeyFromVault() {
+  try {
+    const snap = await getDoc(doc(db, "nafal_platform", "marketConfig"));
+    if (snap.exists()) {
+      const data = snap.data();
+      if (data.imgbbApiKey && data.imgbbApiKey.trim() !== "") {
+        dynamicImgbbApiKey = data.imgbbApiKey.trim();
+      }
+      if (data.uploadEndpoint && data.uploadEndpoint.trim() !== "") {
+        dynamicUploadEndpoint = data.uploadEndpoint.trim();
+      }
+    }
+  } catch (e) {
+    console.warn("Using fallback API configuration:", e);
+  }
+}
+
 async function uploadImageToImgBB(file) {
+  await fetchLatestApiKeyFromVault();
   const base64 = await compressImage(file);
   const formData = new FormData();
   formData.append("image", base64);
-  const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
+
+  const separator = dynamicUploadEndpoint.includes("?") ? "&" : "?";
+  const targetUrl = `${dynamicUploadEndpoint}${separator}key=${encodeURIComponent(dynamicImgbbApiKey)}`;
+
+  const res = await fetch(targetUrl, {
     method: "POST",
     body: formData
   });
   const data = await res.json();
-  if (data.success) return data.data.display_url;
-  throw new Error("ImgBB Upload Failed");
+  if (data && data.success && data.data && data.data.display_url) {
+    return data.data.display_url;
+  }
+  throw new Error("Upload Failed");
 }
 
-// 3. تهيئة البيانات الأساسية للمنصة أول مرة (أبو تركي + إعدادات السوق)
+// ============================================================================
+// 3. تهيئة البيانات الأساسية للمنصة أول مرة
+// ============================================================================
 async function ensurePlatformInitialized() {
   try {
-    // 1. حساب الإدارة العليا الافتراضي
     const adminRef = doc(db, "nafal_platform", "superAdmin");
     const adminSnap = await getDoc(adminRef);
     if (!adminSnap.exists()) {
       await setDoc(adminRef, {
         username: "abuturki",
         password: "Nafal@2026",
+        pinCode: "",
+        trustedDevices: [],
         updatedAt: Date.now()
       });
     }
 
-    // 2. إعدادات السوق الشعبي العامة
     const configRef = doc(db, "nafal_platform", "marketConfig");
     const configSnap = await getDoc(configRef);
     if (!configSnap.exists()) {
       await setDoc(configRef, {
         showMarketplace: true,
         platformName: "سوق نفال — شرورة",
-        platformSlogan: "ارحبوا في سوق نفال.. كل متاجر وأسر شرورة بين يديك!",
+        platformSlogan: "ارحبوا.. متاجر شرورة بين يديك",
         platformBanner: "التوصيل والخدمة مخصصة لأهلنا داخل شرورة فقط",
         platformLogo: "",
+        imgbbApiKey: DEFAULT_IMGBB_KEY,
+        uploadEndpoint: DEFAULT_UPLOAD_ENDPOINT,
         marketCategories: ["متاجر القهوة والمحامص", "الأسر المنتجة والحلى", "العسل والسمن والتمور", "العطور والبخور", "متاجر متنوعة"]
       });
+    } else {
+      const cData = configSnap.data();
+      if (cData.imgbbApiKey) dynamicImgbbApiKey = cData.imgbbApiKey;
+      if (cData.uploadEndpoint) dynamicUploadEndpoint = cData.uploadEndpoint;
     }
+
     document.getElementById("diagnosticAlert").classList.add("hidden");
   } catch (err) {
     console.error("Init Error:", err);
@@ -140,34 +227,416 @@ async function ensurePlatformInitialized() {
   }
 }
 
-// 4. نظام البوابة الذكية لتسجيل الدخول والتوجيه حسب الصلاحية
+// ============================================================================
+// 4. إدارة الشاشات الأربع (تأمين الجلسة / قفل الـ PIN / تسجيل الدخول / البوابة)
+// ============================================================================
+function showOnlyScreen(screenId) {
+  const screens = ["sessionCheckScreen", "pinLockScreen", "loginScreen", "portalApp"];
+  screens.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle("hidden", id !== screenId);
+  });
+}
+
+function getAccountDocRef(role, docId) {
+  if (role === "superadmin") return doc(db, "nafal_platform", "superAdmin");
+  if (role === "merchant") return doc(db, "nafal_stores", docId);
+  if (role === "staff") return doc(db, "nafal_staff", docId);
+  return null;
+}
+
+// تسجيل أو تحديث الجهاز الحالي ضمن قائمة الأجهزة الموثوقة للمستخدم
+async function registerTrustedDeviceInDb(role, docId, existingDevices = []) {
+  const devId = getOrCreateDeviceId();
+  const devName = getDeviceFriendlyName();
+  const list = Array.isArray(existingDevices) ? [...existingDevices] : [];
+  const idx = list.findIndex(d => d.deviceId === devId);
+
+  const deviceEntry = {
+    deviceId: devId,
+    deviceName: devName,
+    lastUsedAt: Date.now()
+  };
+
+  if (idx >= 0) {
+    list[idx] = deviceEntry;
+  } else {
+    list.unshift(deviceEntry);
+  }
+
+  const ref = getAccountDocRef(role, docId);
+  if (ref) {
+    await updateDoc(ref, { trustedDevices: list });
+  }
+  return list;
+}
+
+// عرض قائمة الأجهزة الموثوقة في الإعدادات (للإدارة العليا، التاجر، والموظف)
+function renderTrustedDevicesUI(containerId, devices = [], role, docId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.innerHTML = "";
+
+  const myDevId = getOrCreateDeviceId();
+  if (!Array.isArray(devices) || devices.length === 0) {
+    container.innerHTML = `
+      <div class="empty-box glass-inset">
+        <i class="ri-smartphone-line"></i>
+        <span>لا توجد أجهزة موثوقة مسجلة حالياً</span>
+      </div>
+    `;
+    return;
+  }
+
+  devices.forEach(dev => {
+    const isCurrent = dev.deviceId === myDevId;
+    const card = document.createElement("div");
+    card.className = "trusted-device-card";
+    card.innerHTML = `
+      <div class="td-info">
+        <div class="td-icon"><i class="${dev.deviceName.includes('جوال') || dev.deviceName.includes('آيفون') ? 'ri-smartphone-line' : 'ri-macbook-line'}"></i></div>
+        <div>
+          <strong style="font-size:0.95rem;">
+            ${escapeHtml(dev.deviceName || "جهاز موثوق")}
+            ${isCurrent ? '<span class="td-current-badge">هذا الجهاز حالياً</span>' : ''}
+          </strong>
+          <div class="sub-hint">آخر نشاط: ${new Date(dev.lastUsedAt || Date.now()).toLocaleString("ar-SA")}</div>
+        </div>
+      </div>
+      <button type="button" class="btn-danger-glass revoke-single-btn">
+        <i class="ri-delete-bin-line"></i>
+        <span>إزالة الجهاز</span>
+      </button>
+    `;
+
+    card.querySelector(".revoke-single-btn").addEventListener("click", () => {
+      requirePinVerification(async () => {
+        const updated = devices.filter(d => d.deviceId !== dev.deviceId);
+        const ref = getAccountDocRef(role, docId);
+        if (ref) await updateDoc(ref, { trustedDevices: updated });
+        showToast("تم إلغاء الوثوق بالجهاز بنجاح");
+        if (isCurrent) {
+          performFullLogout();
+        }
+      }, "أدخل الرمز السريع لتأكيد إزالة هذا الجهاز الموثوق:");
+    });
+
+    container.appendChild(card);
+  });
+}
+
+// ============================================================================
+// 5. نافذة التحقق بالرمز السريع (4-Digit PIN Modal) للعمليات الحساسة أو الإعداد الأول
+// ============================================================================
+let secModalCallback = null;
+
+function openSecurityModal({ title, desc, confirmText = "تأكيد", onConfirm }) {
+  const modal = document.getElementById("securityModal");
+  document.getElementById("secModalTitle").textContent = title;
+  document.getElementById("secModalDesc").textContent = desc;
+  document.getElementById("secModalConfirmText").textContent = confirmText;
+  const input = document.getElementById("secModalPinInput");
+  input.value = "";
+  secModalCallback = onConfirm;
+  modal.classList.remove("hidden");
+  setTimeout(() => input.focus(), 80);
+}
+
+function closeSecurityModal() {
+  document.getElementById("securityModal").classList.add("hidden");
+  document.getElementById("secModalPinInput").value = "";
+  secModalCallback = null;
+}
+
+document.getElementById("closeSecModalBtn").addEventListener("click", closeSecurityModal);
+document.getElementById("secModalCancelBtn").addEventListener("click", closeSecurityModal);
+
+document.getElementById("secModalConfirmBtn").addEventListener("click", () => {
+  const val = document.getElementById("secModalPinInput").value.trim();
+  if (typeof secModalCallback === "function") {
+    secModalCallback(val);
+  }
+});
+
+document.getElementById("secModalPinInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    document.getElementById("secModalConfirmBtn").click();
+  }
+});
+
+// دالة تطلب الرمز السريع قبل تنفيذ أي إجراء حساس (إذا كان المستخدم مفعلاً للـ PIN)
+function requirePinVerification(actionFn, customPrompt = "أدخل رمز الدخول السريع (4 أرقام) لتأكيد حفظ التغييرات الحساسة:") {
+  if (!currentSession || !currentSession.pinCode || currentSession.pinCode.length !== 4) {
+    actionFn();
+    return;
+  }
+
+  openSecurityModal({
+    title: "تأكيد الأمان (4 أرقام)",
+    desc: customPrompt,
+    confirmText: "تأكيد وتنفيذ",
+    onConfirm: async (enteredPin) => {
+      if (enteredPin === currentSession.pinCode) {
+        closeSecurityModal();
+        await actionFn();
+      } else {
+        showToast("الرمز السريع غير صحيح! لم يتم تنفيذ العملية");
+      }
+    }
+  });
+}
+
+// اقتراح لطيف لإعداد رمز سريع (4 أرقام) بعد تسجيل الدخول وتفعيل الوثوق بالجهاز
+function offerQuickPinSetupIfMissing() {
+  if (!currentSession || (currentSession.pinCode && currentSession.pinCode.length === 4)) return;
+
+  openSecurityModal({
+    title: "تفعيل رمز الدخول السريع (اختياري)",
+    desc: "هل ترغب في تعيين رمز أمان من 4 أرقام لحماية بوابة متجرك والدخول السريع بدون كلمة مرور؟ (أو اضغط تخطي):",
+    confirmText: "حفظ الرمز",
+    onConfirm: async (newPin) => {
+      if (!/^\d{4}$/.test(newPin)) {
+        showToast("يرجى إدخال 4 أرقام بالضبط أو الضغط على تخطي");
+        return;
+      }
+      const ref = getAccountDocRef(currentSession.role, currentSession.docId);
+      if (ref) {
+        await updateDoc(ref, { pinCode: newPin });
+        currentSession.pinCode = newPin;
+        saveSessionLocally(currentSession);
+        updateQuickLockButtonVisibility();
+        showToast("تم تفعيل رمز الدخول السريع (4 أرقام) بنجاح!");
+      }
+      closeSecurityModal();
+    }
+  });
+}
+
+// ============================================================================
+// 6. شاشة القفل بالرمز السريع (PIN Lock Screen) والقفل التلقائي عند الخمول
+// ============================================================================
+function updatePinDotsUI(isError = false) {
+  const dots = document.querySelectorAll("#pinDotsContainer .pin-dot");
+  dots.forEach((dot, idx) => {
+    dot.classList.toggle("filled", idx < enteredPinBuffer.length);
+    dot.classList.toggle("error", isError);
+  });
+}
+
+function triggerPinLockScreen() {
+  if (!currentSession || !currentSession.pinCode || currentSession.pinCode.length !== 4) return;
+  isPinLocked = true;
+  enteredPinBuffer = "";
+  updatePinDotsUI(false);
+  document.getElementById("pinWelcomeTitle").textContent = `مرحباً، ${currentSession.name}`;
+  document.getElementById("pinSubPrompt").textContent = "الجلسة مؤمّنة — أدخل الرمز السريع (4 أرقام) للمتابعة";
+  showOnlyScreen("pinLockScreen");
+}
+
+function handlePinDigitPress(digit) {
+  if (!isPinLocked || enteredPinBuffer.length >= 4) return;
+  enteredPinBuffer += String(digit);
+  updatePinDotsUI(false);
+
+  if (enteredPinBuffer.length === 4) {
+    setTimeout(() => {
+      if (currentSession && enteredPinBuffer === currentSession.pinCode) {
+        isPinLocked = false;
+        enteredPinBuffer = "";
+        updatePinDotsUI(false);
+        openPortalForSession(currentSession, false);
+      } else {
+        updatePinDotsUI(true);
+        showToast("الرمز السريع غير صحيح");
+        setTimeout(() => {
+          enteredPinBuffer = "";
+          updatePinDotsUI(false);
+        }, 450);
+      }
+    }, 120);
+  }
+}
+
+document.querySelectorAll(".pin-keypad .pin-key[data-digit]").forEach(btn => {
+  btn.addEventListener("click", () => handlePinDigitPress(btn.dataset.digit));
+});
+
+document.getElementById("pinClearBtn").addEventListener("click", () => {
+  enteredPinBuffer = "";
+  updatePinDotsUI(false);
+});
+
+document.getElementById("pinBackBtn").addEventListener("click", () => {
+  enteredPinBuffer = enteredPinBuffer.slice(0, -1);
+  updatePinDotsUI(false);
+});
+
+window.addEventListener("keydown", (e) => {
+  if (!isPinLocked) return;
+  if (/^[0-9]$/.test(e.key)) {
+    handlePinDigitPress(e.key);
+  } else if (e.key === "Backspace") {
+    enteredPinBuffer = enteredPinBuffer.slice(0, -1);
+    updatePinDotsUI(false);
+  } else if (e.key === "Escape") {
+    enteredPinBuffer = "";
+    updatePinDotsUI(false);
+  }
+});
+
+document.getElementById("switchAccountFromPinBtn").addEventListener("click", () => {
+  performFullLogout();
+});
+
+document.getElementById("quickLockBtn").addEventListener("click", () => {
+  triggerPinLockScreen();
+});
+
+function updateQuickLockButtonVisibility() {
+  const lockBtn = document.getElementById("quickLockBtn");
+  if (!lockBtn) return;
+  const hasPin = currentSession && currentSession.pinCode && currentSession.pinCode.length === 4;
+  lockBtn.classList.toggle("hidden", !hasPin);
+}
+
+function resetIdleTimer() {
+  if (idleLockTimer) clearTimeout(idleLockTimer);
+  if (!currentSession || isPinLocked || !currentSession.pinCode || currentSession.pinCode.length !== 4) return;
+  idleLockTimer = setTimeout(() => {
+    triggerPinLockScreen();
+  }, IDLE_LOCK_TIMEOUT_MS);
+}
+
+["mousemove", "keydown", "touchstart", "click"].forEach(evt => {
+  window.addEventListener(evt, resetIdleTimer, { passive: true });
+});
+
+// ============================================================================
+// 7. التحقق من الجلسة عند تشغيل البوابة وتسجيل الدخول
+// ============================================================================
+function saveSessionLocally(sessionObj) {
+  localStorage.setItem("nafal_portal_session", JSON.stringify({
+    role: sessionObj.role,
+    docId: sessionObj.docId,
+    storeId: sessionObj.storeId || "",
+    username: sessionObj.username
+  }));
+}
+
+async function verifySavedSessionOnStartup() {
+  showOnlyScreen("sessionCheckScreen");
+  await ensurePlatformInitialized();
+
+  const raw = localStorage.getItem("nafal_portal_session");
+  if (!raw) {
+    showOnlyScreen("loginScreen");
+    return;
+  }
+
+  try {
+    const saved = JSON.parse(raw);
+    const devId = getOrCreateDeviceId();
+    const ref = getAccountDocRef(saved.role, saved.docId);
+    if (!ref) throw new Error("Invalid Role");
+
+    const snap = await getDoc(ref);
+    if (!snap.exists()) throw new Error("Account Not Found");
+
+    const data = snap.data();
+    const trustedList = Array.isArray(data.trustedDevices) ? data.trustedDevices : [];
+    const isDeviceTrusted = trustedList.some(d => d.deviceId === devId);
+
+    if (!isDeviceTrusted) {
+      localStorage.removeItem("nafal_portal_session");
+      showOnlyScreen("loginScreen");
+      return;
+    }
+
+    // تحديث وقت آخر استخدام للجهاز الموثوق
+    registerTrustedDeviceInDb(saved.role, saved.docId, trustedList).catch(() => {});
+
+    let sessionPayload = null;
+    if (saved.role === "superadmin") {
+      sessionPayload = {
+        role: "superadmin",
+        docId: "superAdmin",
+        username: data.username,
+        name: "الإدارة العليا (أبو تركي)",
+        pinCode: data.pinCode || ""
+      };
+    } else if (saved.role === "merchant") {
+      sessionPayload = {
+        role: "merchant",
+        docId: snap.id,
+        storeId: snap.id,
+        username: data.merchantUsername,
+        name: data.name,
+        pinCode: data.pinCode || ""
+      };
+    } else if (saved.role === "staff") {
+      sessionPayload = {
+        role: "staff",
+        docId: snap.id,
+        storeId: data.storeId,
+        username: data.username,
+        name: data.name,
+        phone: data.phone || "",
+        staffRole: data.role || "مندوب توصيل",
+        pinCode: data.pinCode || ""
+      };
+    }
+
+    currentSession = sessionPayload;
+
+    // إذا كان المستخدم مفعلاً لرمز الـ PIN، نفتح له شاشة القفل السريع بدلاً من كلمة المرور
+    if (sessionPayload.pinCode && sessionPayload.pinCode.length === 4) {
+      triggerPinLockScreen();
+    } else {
+      openPortalForSession(sessionPayload, false);
+    }
+  } catch (err) {
+    console.warn("Session verification fallback to login:", err);
+    localStorage.removeItem("nafal_portal_session");
+    showOnlyScreen("loginScreen");
+  }
+}
+
 document.getElementById("loginForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const userIn = document.getElementById("loginUsername").value.trim();
   const passIn = document.getElementById("loginPassword").value.trim();
+  const trustDevice = document.getElementById("trustDeviceCheckbox").checked;
   const btn = document.getElementById("loginSubmitBtn");
 
   btn.disabled = true;
-  btn.innerHTML = `<i class="ri-loader-4-line"></i><span>جاري التحقق من الصلاحية...</span>`;
+  btn.innerHTML = `<i class="ri-loader-4-line"></i><span>جاري التحقق وتأمين الجلسة...</span>`;
 
   try {
     await ensurePlatformInitialized();
 
-    // فحص 1: هل هو الإدارة العليا (أبو تركي)؟
+    // 1. فحص حساب الإدارة العليا (أبو تركي)
     const adminSnap = await getDoc(doc(db, "nafal_platform", "superAdmin"));
     if (adminSnap.exists()) {
       const adminData = adminSnap.data();
-      if (adminData.username.toLowerCase() === userIn.toLowerCase() && adminData.password === passIn) {
-        startSession({
+      if ((adminData.username || "").toLowerCase() === userIn.toLowerCase() && adminData.password === passIn) {
+        if (trustDevice) {
+          await registerTrustedDeviceInDb("superadmin", "superAdmin", adminData.trustedDevices || []);
+        }
+        const sessionObj = {
           role: "superadmin",
+          docId: "superAdmin",
           username: adminData.username,
-          name: "الإدارة العليا (أبو تركي)"
-        });
+          name: "الإدارة العليا (أبو تركي)",
+          pinCode: adminData.pinCode || ""
+        };
+        if (trustDevice) saveSessionLocally(sessionObj);
+        openPortalForSession(sessionObj, trustDevice);
         return;
       }
     }
 
-    // فحص 2: هل هو تاجر (صاحب متجر)؟
+    // 2. فحص حسابات التجار
     const storesSnap = await getDocs(collection(db, "nafal_stores"));
     let matchedStore = null;
     storesSnap.forEach(docSnap => {
@@ -178,16 +647,23 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
     });
 
     if (matchedStore) {
-      startSession({
+      if (trustDevice) {
+        await registerTrustedDeviceInDb("merchant", matchedStore.id, matchedStore.trustedDevices || []);
+      }
+      const sessionObj = {
         role: "merchant",
+        docId: matchedStore.id,
         storeId: matchedStore.id,
         username: matchedStore.merchantUsername,
-        name: matchedStore.name
-      });
+        name: matchedStore.name,
+        pinCode: matchedStore.pinCode || ""
+      };
+      if (trustDevice) saveSessionLocally(sessionObj);
+      openPortalForSession(sessionObj, trustDevice);
       return;
     }
 
-    // فحص 3: هل هو موظف أو مندوب توصيل؟
+    // 3. فحص حسابات الموظفين والمناديب
     const staffSnap = await getDocs(collection(db, "nafal_staff"));
     let matchedStaff = null;
     staffSnap.forEach(docSnap => {
@@ -198,15 +674,21 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
     });
 
     if (matchedStaff) {
-      startSession({
+      if (trustDevice) {
+        await registerTrustedDeviceInDb("staff", matchedStaff.id, matchedStaff.trustedDevices || []);
+      }
+      const sessionObj = {
         role: "staff",
-        staffId: matchedStaff.id,
+        docId: matchedStaff.id,
         storeId: matchedStaff.storeId,
         username: matchedStaff.username,
         name: matchedStaff.name,
         phone: matchedStaff.phone || "",
-        staffRole: matchedStaff.role || "مندوب توصيل"
-      });
+        staffRole: matchedStaff.role || "مندوب توصيل",
+        pinCode: matchedStaff.pinCode || ""
+      };
+      if (trustDevice) saveSessionLocally(sessionObj);
+      openPortalForSession(sessionObj, trustDevice);
       return;
     }
 
@@ -216,32 +698,33 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
     showToast("حدث خطأ في الاتصال بقاعدة البيانات");
   } finally {
     btn.disabled = false;
-    btn.innerHTML = `<i class="ri-login-circle-line"></i><span>دخول للبوابة الذكية</span>`;
+    btn.innerHTML = `<i class="ri-login-circle-line"></i><span>تسجيل الدخول للمتجر</span>`;
   }
 });
 
-function startSession(sessionData) {
+function openPortalForSession(sessionData, promptForPinIfMissing = false) {
   currentSession = sessionData;
-  localStorage.setItem("nafal_portal_session", JSON.stringify(sessionData));
+  isPinLocked = false;
 
-  document.getElementById("loginScreen").classList.add("hidden");
-  document.getElementById("portalApp").classList.remove("hidden");
+  showOnlyScreen("portalApp");
 
   document.getElementById("superAdminView").classList.add("hidden");
   document.getElementById("merchantView").classList.add("hidden");
   document.getElementById("staffView").classList.add("hidden");
 
   clearSubscriptions();
+  updateQuickLockButtonVisibility();
+  resetIdleTimer();
 
   if (sessionData.role === "superadmin") {
-    document.getElementById("roleBadge").textContent = "الإدارة العليا";
+    document.getElementById("roleBadge").textContent = "المالك والإدارة العليا";
     document.getElementById("portalTitle").textContent = "البوابة الذكية — نفال";
-    document.getElementById("portalSubtitle").textContent = "إدارة السوق الشعبي، التجار، والاشتراكات — شرورة";
+    document.getElementById("portalSubtitle").textContent = "الإدارة العليا للسوق، التجار، والاشتراكات — شرورة";
     document.getElementById("currentUserDisplay").textContent = sessionData.username;
     document.getElementById("superAdminView").classList.remove("hidden");
     initSuperAdminPortal();
   } else if (sessionData.role === "merchant") {
-    document.getElementById("roleBadge").textContent = "لوحة التاجر";
+    document.getElementById("roleBadge").textContent = "بوابة التاجر";
     document.getElementById("currentUserDisplay").textContent = sessionData.username;
     document.getElementById("merchantView").classList.remove("hidden");
     initMerchantPortal(sessionData.storeId);
@@ -251,19 +734,26 @@ function startSession(sessionData) {
     document.getElementById("staffView").classList.remove("hidden");
     initStaffPortal(sessionData);
   }
+
+  if (promptForPinIfMissing && (!sessionData.pinCode || sessionData.pinCode.length !== 4)) {
+    setTimeout(() => offerQuickPinSetupIfMissing(), 600);
+  }
 }
 
-document.getElementById("logoutBtn").addEventListener("click", () => {
+function performFullLogout() {
   clearSubscriptions();
+  if (idleLockTimer) clearTimeout(idleLockTimer);
   currentSession = null;
+  isPinLocked = false;
   localStorage.removeItem("nafal_portal_session");
-  document.getElementById("portalApp").classList.add("hidden");
-  document.getElementById("loginScreen").classList.remove("hidden");
   document.getElementById("loginForm").reset();
-  showToast("تم تسجيل الخروج بنجاح");
-});
+  showOnlyScreen("loginScreen");
+  showToast("تم تسجيل الخروج وتأمين البوابة");
+}
 
-// تفعيل أزرار التنقل للتبويبات
+document.getElementById("logoutBtn").addEventListener("click", performFullLogout);
+
+// تفعيل أزرار التنقل للتبويبات الثلاثة
 function setupTabNavigation(navBarId, viewContainerId) {
   const navBar = document.getElementById(navBarId);
   const viewContainer = document.getElementById(viewContainerId);
@@ -282,9 +772,10 @@ function setupTabNavigation(navBarId, viewContainerId) {
 
 setupTabNavigation("saNavBar", "superAdminView");
 setupTabNavigation("mNavBar", "merchantView");
+setupTabNavigation("staffNavBar", "staffView");
 
 // ============================================================================
-// القسم الأول: منطق الإدارة العليا (Super Admin - أبو تركي)
+// القسم الأول: منطق الإدارة العليا (المالك والأدمن الأعلى - أبو تركي فقط)
 // ============================================================================
 let saMarketCategories = ["متاجر القهوة والمحامص", "الأسر المنتجة والحلى", "العسل والسمن والتمور", "العطور والبخور", "متاجر متنوعة"];
 let saAllStores = [];
@@ -292,20 +783,25 @@ let saAllProducts = [];
 let saAllOrders = [];
 
 function initSuperAdminPortal() {
-  // تحديد تاريخ افتراضي لانتهاء الاشتراك بعد شهر
   const nextMonth = new Date();
   nextMonth.setMonth(nextMonth.getMonth() + 1);
   document.getElementById("saSubExpiry").value = nextMonth.toISOString().split("T")[0];
 
-  // جلب بيانات دخول الأدمن الأعلى
-  getDoc(doc(db, "nafal_platform", "superAdmin")).then(snap => {
-    if (snap.exists()) {
-      document.getElementById("saAdminNewUser").value = snap.data().username || "abuturki";
-      document.getElementById("saAdminNewPass").value = snap.data().password || "";
+  // الاستماع لبيانات أمان الإدارة العليا والأجهزة الموثوقة
+  const unsubAdminDoc = onSnapshot(doc(db, "nafal_platform", "superAdmin"), snap => {
+    if (!snap.exists()) return;
+    const d = snap.data();
+    document.getElementById("saAdminNewUser").value = d.username || "abuturki";
+    document.getElementById("saAdminNewPass").value = d.password || "";
+    document.getElementById("saAdminPinInput").value = d.pinCode || "";
+    if (currentSession && currentSession.role === "superadmin") {
+      currentSession.pinCode = d.pinCode || "";
+      updateQuickLockButtonVisibility();
     }
+    renderTrustedDevicesUI("saTrustedDevicesList", d.trustedDevices || [], "superadmin", "superAdmin");
   });
 
-  // الاستماع لإعدادات المنصة
+  // الاستماع لإعدادات المنصة وخزنة مفتاح الـ API
   const unsubConfig = onSnapshot(doc(db, "nafal_platform", "marketConfig"), snap => {
     if (snap.exists()) {
       const d = snap.data();
@@ -314,6 +810,12 @@ function initSuperAdminPortal() {
       document.getElementById("saPlatformSlogan").value = d.platformSlogan || "";
       document.getElementById("saPlatformBanner").value = d.platformBanner || "";
       document.getElementById("saPlatformLogoUrl").value = d.platformLogo || "";
+      document.getElementById("saImgbbApiKeyInput").value = d.imgbbApiKey || DEFAULT_IMGBB_KEY;
+      document.getElementById("saUploadEndpointInput").value = d.uploadEndpoint || DEFAULT_UPLOAD_ENDPOINT;
+
+      if (d.imgbbApiKey) dynamicImgbbApiKey = d.imgbbApiKey;
+      if (d.uploadEndpoint) dynamicUploadEndpoint = d.uploadEndpoint;
+
       if (Array.isArray(d.marketCategories) && d.marketCategories.length > 0) {
         saMarketCategories = d.marketCategories;
       }
@@ -321,7 +823,6 @@ function initSuperAdminPortal() {
     }
   });
 
-  // الاستماع للمتاجر
   const unsubStores = onSnapshot(collection(db, "nafal_stores"), snap => {
     saAllStores = [];
     snap.forEach(d => saAllStores.push({ id: d.id, ...d.data() }));
@@ -329,14 +830,12 @@ function initSuperAdminPortal() {
     updateSaStatsAndStoresUI();
   });
 
-  // الاستماع للمنتجات لحساب عدد منتجات كل تاجر
   const unsubProds = onSnapshot(collection(db, "nafal_products"), snap => {
     saAllProducts = [];
     snap.forEach(d => saAllProducts.push({ id: d.id, ...d.data() }));
     updateSaStatsAndStoresUI();
   });
 
-  // الاستماع للفواتير
   const unsubOrders = onSnapshot(collection(db, "nafal_orders"), snap => {
     saAllOrders = [];
     snap.forEach(d => saAllOrders.push({ id: d.id, ...d.data() }));
@@ -344,7 +843,6 @@ function initSuperAdminPortal() {
     updateSaStatsAndStoresUI();
   });
 
-  // الاستماع لطلبات تغيير أسماء المتاجر
   const unsubNameReqs = onSnapshot(collection(db, "nafal_name_requests"), snap => {
     const reqs = [];
     snap.forEach(d => reqs.push({ id: d.id, ...d.data() }));
@@ -355,7 +853,7 @@ function initSuperAdminPortal() {
     renderSaNameRequests(reqs);
   });
 
-  activeUnsubscribers.push(unsubConfig, unsubStores, unsubProds, unsubOrders, unsubNameReqs);
+  activeUnsubscribers.push(unsubAdminDoc, unsubConfig, unsubStores, unsubProds, unsubOrders, unsubNameReqs);
 }
 
 document.getElementById("toggleSaStoreFormBtn").addEventListener("click", () => {
@@ -377,7 +875,7 @@ function renderSaMarketCategories() {
     const li = document.createElement("li");
     li.className = "cat-item glass-inset";
     li.innerHTML = `
-      <span><i class="ri-store-2-line" style="color:var(--caramel); margin-left:8px;"></i>${cat}</span>
+      <span><i class="ri-store-2-line" style="color:var(--caramel); margin-left:8px;"></i>${escapeHtml(cat)}</span>
       <button type="button" class="btn-danger-glass"><i class="ri-delete-bin-line"></i></button>
     `;
     li.querySelector("button").addEventListener("click", async () => {
@@ -402,7 +900,6 @@ document.getElementById("saAddMarketCatBtn").addEventListener("click", async () 
   }
 });
 
-// حفظ أو تعديل متجر وتاجر من الإدارة العليا
 document.getElementById("saStoreForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const editId = document.getElementById("saEditStoreId").value.trim();
@@ -444,6 +941,8 @@ document.getElementById("saStoreForm").addEventListener("submit", async (e) => {
       storePayload.categories = ["المنتجات المميزة", "بكجات وعروض", "أصناف متنوعة"];
       storePayload.ratingSum = 5;
       storePayload.ratingCount = 1;
+      storePayload.pinCode = "";
+      storePayload.trustedDevices = [];
       await addDoc(collection(db, "nafal_stores"), storePayload);
       showToast("تم تأسيس المتجر وإنشاء حساب التاجر بنجاح");
     }
@@ -492,7 +991,7 @@ function updateSaStatsAndStoresUI() {
     const storeOrdersCount = saAllOrders.filter(o => o.storeId === st.id).length;
 
     const card = document.createElement("div");
-    card.className = "invoice-accordion glass-panel";
+    card.className = "invoice-accordion";
     card.innerHTML = `
       <button type="button" class="invoice-summary-bar">
         <div class="invoice-summary-right">
@@ -500,16 +999,16 @@ function updateSaStatsAndStoresUI() {
           <div>
             <div class="inv-number-title">
               <i class="ri-store-3-fill" style="color:var(--caramel);"></i>
-              <span>${st.name}</span>
-              <small style="color:var(--text-secondary); font-size:0.85rem;">(رمز الفواتير: #${st.invoicePrefix || "NF"})</small>
+              <span>${escapeHtml(st.name)}</span>
+              <small style="color:var(--text-secondary); font-size:0.84rem;">(رمز الفواتير: ${escapeHtml(st.invoicePrefix || "NF")})</small>
             </div>
-            <div class="inv-customer-brief">التصنيف: ${st.marketCategory || "عام"} | الأدمن: <span dir="ltr">${st.merchantUsername}</span></div>
+            <div class="inv-customer-brief">التصنيف: ${escapeHtml(st.marketCategory || "عام")} | المستخدم: <span dir="ltr">${escapeHtml(st.merchantUsername)}</span></div>
             <div class="inv-time-brief">المنتجات: ${storeProdsCount} منتج | الطلبات: ${storeOrdersCount} فاتورة</div>
           </div>
         </div>
 
         <div class="invoice-summary-left">
-          <span class="inv-total-badge">${st.subPlan || "مجاني"} (${st.subPrice || 0} ريال)</span>
+          <span class="inv-total-badge">${escapeHtml(st.subPlan || "مجاني")} (${Number(st.subPrice || 0)} ريال)</span>
           <span class="status-badge-lg ${isMaintenance ? 'status-cancel' : 'status-done'}">
             <i class="${isMaintenance ? 'ri-tools-fill' : 'ri-checkbox-circle-fill'}"></i>
             <span>${isMaintenance ? "تحت الصيانة / منتهي" : "نشط ومفعل"}</span>
@@ -521,15 +1020,15 @@ function updateSaStatsAndStoresUI() {
         <div class="inv-info-grid">
           <div class="inv-box glass-inset">
             <h4><i class="ri-key-2-line"></i> بيانات دخول التاجر والتواصل</h4>
-            <div><strong>اسم المستخدم (الأدمن):</strong> <span dir="ltr">${st.merchantUsername}</span></div>
-            <div><strong>كلمة المرور:</strong> <span dir="ltr">${st.merchantPassword}</span></div>
-            <div><strong>واتساب المتجر:</strong> <span dir="ltr">${st.whatsappNumber}</span></div>
+            <div><strong>اسم المستخدم:</strong> <span dir="ltr">${escapeHtml(st.merchantUsername)}</span></div>
+            <div><strong>كلمة المرور:</strong> <span dir="ltr">${escapeHtml(st.merchantPassword)}</span></div>
+            <div><strong>واتساب المتجر:</strong> <span dir="ltr">${escapeHtml(st.whatsappNumber)}</span></div>
           </div>
 
           <div class="inv-box glass-inset">
             <h4><i class="ri-vip-crown-line"></i> تفاصيل الاشتراك</h4>
-            <div><strong>نوع الباقة:</strong> ${st.subPlan} (${st.subPrice || 0} ريال)</div>
-            <div><strong>تاريخ الانتهاء:</strong> ${st.subExpiry || "غير محدد"} ${isExpired ? '<strong style="color:var(--danger);">(منتهي)</strong>' : ''}</div>
+            <div><strong>نوع الباقة:</strong> ${escapeHtml(st.subPlan)} (${Number(st.subPrice || 0)} ريال)</div>
+            <div><strong>تاريخ الانتهاء:</strong> ${escapeHtml(st.subExpiry || "غير محدد")} ${isExpired ? '<strong style="color:var(--danger);">(منتهي)</strong>' : ''}</div>
             <div><strong>عدد المنتجات المرفوعة:</strong> ${storeProdsCount} منتج</div>
           </div>
         </div>
@@ -578,18 +1077,19 @@ function updateSaStatsAndStoresUI() {
       showToast(nextStatus === "active" ? "تم تفعيل المتجر في السوق" : "تم تحويل المتجر لوضع الصيانة");
     });
 
-    card.querySelector(".del-store-btn").addEventListener("click", async () => {
-      if (confirm(`هل أنت متأكد من حذف متجر "${st.name}"؟`)) {
-        await deleteDoc(doc(db, "nafal_stores", st.id));
-        showToast("تم حذف المتجر");
-      }
+    card.querySelector(".del-store-btn").addEventListener("click", () => {
+      requirePinVerification(async () => {
+        if (confirm(`هل أنت متأكد من حذف متجر "${st.name}" نهائياً؟`)) {
+          await deleteDoc(doc(db, "nafal_stores", st.id));
+          showToast("تم حذف المتجر");
+        }
+      }, `أدخل رمز الأمان (4 أرقام) لتأكيد حذف متجر "${st.name}":`);
     });
 
     container.appendChild(card);
   });
 }
 
-// مراجعة طلبات تغيير أسماء المتاجر
 function renderSaNameRequests(requests) {
   const container = document.getElementById("saNameRequestsList");
   container.innerHTML = "";
@@ -612,9 +1112,9 @@ function renderSaNameRequests(requests) {
     card.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
         <div>
-          <div style="font-size:1.08rem; font-weight:900;">
-            الاسم الحالي: <span style="color:var(--text-secondary);">${req.oldName}</span> 
-            ⬅️ الاسم الجديد المطلوب: <span style="color:var(--caramel-dark);">${req.requestedName}</span>
+          <div style="font-size:1.04rem; font-weight:900;">
+            الاسم الحالي: <span style="color:var(--text-secondary);">${escapeHtml(req.oldName)}</span> 
+            ⬅️ الاسم الجديد المطلوب: <span style="color:var(--caramel-dark);">${escapeHtml(req.requestedName)}</span>
           </div>
           <small class="sub-hint">تاريخ الطلب: ${new Date(req.createdAt).toLocaleString("ar-SA")}</small>
         </div>
@@ -648,7 +1148,7 @@ function renderSaNameRequests(requests) {
   });
 }
 
-// حفظ إعدادات المنصة العامة
+// رفع شعار المنصة وحفظ إعدادات السوق ومفتاح الـ API (حصرياً للإدارة العليا)
 document.getElementById("saPlatformLogoFile").addEventListener("change", async (e) => {
   const file = e.target.files[0];
   if (!file) return;
@@ -659,36 +1159,74 @@ document.getElementById("saPlatformLogoFile").addEventListener("change", async (
     document.getElementById("saPlatformLogoUrl").value = url;
     statusEl.textContent = "تم رفع شعار المنصة بنجاح";
   } catch {
-    statusEl.textContent = "تعذر رفع الشعار";
+    statusEl.textContent = "تعذر رفع الشعار — تأكد من صحة مفتاح الـ API";
   }
 });
 
-document.getElementById("saPlatformForm").addEventListener("submit", async (e) => {
+document.getElementById("saPlatformForm").addEventListener("submit", (e) => {
   e.preventDefault();
-  await setDoc(doc(db, "nafal_platform", "marketConfig"), {
-    showMarketplace: document.getElementById("saShowMarketplaceToggle").checked,
-    platformName: document.getElementById("saPlatformName").value.trim(),
-    platformSlogan: document.getElementById("saPlatformSlogan").value.trim(),
-    platformBanner: document.getElementById("saPlatformBanner").value.trim(),
-    platformLogo: document.getElementById("saPlatformLogoUrl").value.trim()
-  }, { merge: true });
-  showToast("تم حفظ إعدادات سوق شرورة والمنصة العامة");
+  if (!currentSession || currentSession.role !== "superadmin") {
+    showToast("غير مصرح لك بتعديل هذه الإعدادات");
+    return;
+  }
+
+  requirePinVerification(async () => {
+    const newApiKey = document.getElementById("saImgbbApiKeyInput").value.trim() || DEFAULT_IMGBB_KEY;
+    const newEndpoint = document.getElementById("saUploadEndpointInput").value.trim() || DEFAULT_UPLOAD_ENDPOINT;
+
+    dynamicImgbbApiKey = newApiKey;
+    dynamicUploadEndpoint = newEndpoint;
+
+    await setDoc(doc(db, "nafal_platform", "marketConfig"), {
+      showMarketplace: document.getElementById("saShowMarketplaceToggle").checked,
+      platformName: document.getElementById("saPlatformName").value.trim(),
+      platformSlogan: document.getElementById("saPlatformSlogan").value.trim(),
+      platformBanner: document.getElementById("saPlatformBanner").value.trim(),
+      platformLogo: document.getElementById("saPlatformLogoUrl").value.trim(),
+      imgbbApiKey: newApiKey,
+      uploadEndpoint: newEndpoint,
+      updatedAt: Date.now()
+    }, { merge: true });
+
+    showToast("تم حفظ إعدادات المنصة وخزنة مفتاح الـ API بنجاح");
+  }, "أدخل رمز الأمان (4 أرقام) لتأكيد حفظ إعدادات المنصة ومفتاح الـ API:");
 });
 
-// تحديث بيانات دخول الإدارة العليا (أبو تركي)
-document.getElementById("saCredentialsForm").addEventListener("submit", async (e) => {
+// تحديث بيانات دخول الإدارة العليا والرمز السريع
+document.getElementById("saCredentialsForm").addEventListener("submit", (e) => {
   e.preventDefault();
   const newUser = document.getElementById("saAdminNewUser").value.trim();
   const newPass = document.getElementById("saAdminNewPass").value.trim();
-  await setDoc(doc(db, "nafal_platform", "superAdmin"), {
-    username: newUser,
-    password: newPass,
-    updatedAt: Date.now()
-  });
-  currentSession.username = newUser;
-  localStorage.setItem("nafal_portal_session", JSON.stringify(currentSession));
-  document.getElementById("currentUserDisplay").textContent = newUser;
-  showToast("تم تحديث اسم المستخدم وكلمة المرور للإدارة العليا");
+  const newPin = document.getElementById("saAdminPinInput").value.trim();
+
+  if (newPin !== "" && !/^\d{4}$/.test(newPin)) {
+    showToast("الرمز السريع يجب أن يتكون من 4 أرقام بالضبط أو اتركه فارغاً");
+    return;
+  }
+
+  requirePinVerification(async () => {
+    await setDoc(doc(db, "nafal_platform", "superAdmin"), {
+      username: newUser,
+      password: newPass,
+      pinCode: newPin,
+      updatedAt: Date.now()
+    }, { merge: true });
+
+    currentSession.username = newUser;
+    currentSession.pinCode = newPin;
+    saveSessionLocally(currentSession);
+    document.getElementById("currentUserDisplay").textContent = newUser;
+    updateQuickLockButtonVisibility();
+    showToast("تم تحديث بيانات الدخول والرمز السريع للإدارة العليا");
+  }, "أدخل رمزك السريع الحالي لتأكيد تعديل بيانات الدخول:");
+});
+
+document.getElementById("saRevokeAllDevicesBtn").addEventListener("click", () => {
+  requirePinVerification(async () => {
+    await updateDoc(doc(db, "nafal_platform", "superAdmin"), { trustedDevices: [] });
+    showToast("تم إلغاء الوثوق بجميع الأجهزة");
+    performFullLogout();
+  }, "أدخل الرمز السريع لتأكيد إلغاء الوثوق بجميع الأجهزة:");
 });
 
 // ============================================================================
@@ -701,14 +1239,17 @@ let mAllOrders = [];
 let mSelectedOrderFilter = "all";
 
 function initMerchantPortal(storeId) {
-  // 1. الاستماع لبيانات متجر التاجر
   const unsubStore = onSnapshot(doc(db, "nafal_stores", storeId), snap => {
     if (!snap.exists()) return;
     mCurrentStore = { id: snap.id, ...snap.data() };
+    if (currentSession && currentSession.role === "merchant") {
+      currentSession.pinCode = mCurrentStore.pinCode || "";
+      updateQuickLockButtonVisibility();
+    }
     populateMerchantUI(mCurrentStore);
+    renderTrustedDevicesUI("mTrustedDevicesList", mCurrentStore.trustedDevices || [], "merchant", mCurrentStore.id);
   });
 
-  // 2. الاستماع لمنتجات هذا المتجر فقط
   const qProds = query(collection(db, "nafal_products"), where("storeId", "==", storeId));
   const unsubProds = onSnapshot(qProds, snap => {
     const prods = [];
@@ -717,7 +1258,6 @@ function initMerchantPortal(storeId) {
     renderMerchantProducts(prods);
   });
 
-  // 3. الاستماع لفواتير هذا المتجر فقط
   const qOrders = query(collection(db, "nafal_orders"), where("storeId", "==", storeId));
   const unsubOrders = onSnapshot(qOrders, snap => {
     mAllOrders = [];
@@ -726,7 +1266,6 @@ function initMerchantPortal(storeId) {
     updateMerchantStatsAndOrders();
   });
 
-  // 4. الاستماع لموظفي ومناديب هذا المتجر فقط
   const qStaff = query(collection(db, "nafal_staff"), where("storeId", "==", storeId));
   const unsubStaff = onSnapshot(qStaff, snap => {
     const staffList = [];
@@ -752,19 +1291,16 @@ function populateMerchantUI(st) {
     logoIcon.classList.remove("hidden");
   }
 
-  // شريط الاشتراك
   const todayStr = new Date().toISOString().split("T")[0];
   const isExpired = st.subExpiry && st.subExpiry < todayStr;
   document.getElementById("mSubBannerTitle").textContent = 
     `باقة اشتراكك: ${st.subPlan || "مجاني"} (${st.subPrice ? st.subPrice + " ريال" : "مفعل"}) ${isExpired ? "— منتهي (المتجر في وضع الصيانة)" : ""}`;
   document.getElementById("mSubBannerExpiry").innerHTML = 
-    `تاريخ الانتهاء: <strong>${st.subExpiry || "مفتوح"}</strong> | رمز فواتير متجرك: <strong>#${st.invoicePrefix || "NF"}</strong>`;
+    `تاريخ الانتهاء: <strong>${escapeHtml(st.subExpiry || "مفتوح")}</strong> | رمز فواتير متجرك: <strong>${escapeHtml(st.invoicePrefix || "NF")}</strong>`;
 
-  // التقييم
   const avgRating = st.ratingCount ? (st.ratingSum / st.ratingCount).toFixed(1) : "5.0";
   document.getElementById("mStatRating").textContent = `${avgRating} ★`;
 
-  // تعبئة حقول الدوام والعروض
   document.getElementById("mWorkMode").value = st.workMode || "24h";
   document.getElementById("mOpenTime").value = st.openTime || "08:00";
   document.getElementById("mCloseTime").value = st.closeTime || "23:30";
@@ -778,7 +1314,6 @@ function populateMerchantUI(st) {
   document.getElementById("mTier2Threshold").value = st.tier2Threshold ?? 300;
   document.getElementById("mTier2Fee").value = st.tier2Fee ?? 0;
 
-  // تعبئة الهوية والتواصل
   document.getElementById("mStoreDescInput").value = st.description || "";
   document.getElementById("mStoreLogoUrl").value = st.logo || "";
   if (st.logo) {
@@ -792,9 +1327,9 @@ function populateMerchantUI(st) {
   document.getElementById("mTiktokInput").value = st.tiktokUrl || "";
   document.getElementById("mInstaInput").value = st.instagramUrl || "";
 
-  // بيانات دخول التاجر
   document.getElementById("mSelfNewUser").value = st.merchantUsername || "";
   document.getElementById("mSelfNewPass").value = st.merchantPassword || "";
+  document.getElementById("mSelfPinInput").value = st.pinCode || "";
 
   if (Array.isArray(st.categories) && st.categories.length > 0) {
     mStoreCategories = st.categories;
@@ -802,7 +1337,6 @@ function populateMerchantUI(st) {
   renderMerchantCategories();
 }
 
-// نسخ الرابط العميق الخاص بمتجر التاجر
 document.getElementById("mCopyStoreLinkBtn").addEventListener("click", () => {
   if (!mCurrentStore) return;
   const link = `${window.location.origin}/?store=${mCurrentStore.id}`;
@@ -815,7 +1349,6 @@ document.getElementById("toggleMProductFormBtn").addEventListener("click", () =>
   document.getElementById("mProductFormAccordion").classList.toggle("open");
 });
 
-// رفع حتى 4 صور للمنتج
 document.getElementById("mProdImagesInput").addEventListener("change", async (e) => {
   const files = Array.from(e.target.files);
   if (!files.length) return;
@@ -838,7 +1371,7 @@ document.getElementById("mProdImagesInput").addEventListener("change", async (e)
     statusEl.textContent = `تم رفع ${mUploadedImagesList.length} من 4 صور بنجاح`;
   } catch (err) {
     console.error(err);
-    statusEl.textContent = "حدث خطأ أثناء رفع بعض الصور";
+    statusEl.textContent = "حدث خطأ أثناء رفع الصور";
   }
 });
 
@@ -849,7 +1382,7 @@ function renderMerchantUploadedThumbs() {
     const box = document.createElement("div");
     box.className = "preview-thumb-box";
     box.innerHTML = `
-      <img src="${url}" alt="صورة">
+      <img src="${escapeHtml(url)}" alt="صورة">
       <button type="button" title="حذف الصورة">&times;</button>
     `;
     box.querySelector("button").addEventListener("click", () => {
@@ -860,7 +1393,6 @@ function renderMerchantUploadedThumbs() {
   });
 }
 
-// حفظ منتج أو بكج للتاجر
 document.getElementById("mProductForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!mCurrentStore) return;
@@ -937,15 +1469,15 @@ function renderMerchantProducts(prods) {
     const card = document.createElement("div");
     card.className = "product-card";
     card.innerHTML = `
-      <img src="${p.imageUrl || DEFAULT_PRODUCT_IMG}" alt="${p.name}">
+      <img src="${escapeHtml(p.imageUrl || DEFAULT_PRODUCT_IMG)}" alt="${escapeHtml(p.name)}" loading="lazy">
       <div class="product-card-body">
-        <div class="product-card-title">${p.productType === "bundle" ? "🔥 " : ""}${p.name}</div>
-        <div style="font-size:0.82rem; color:var(--text-secondary); font-weight:700;">
-          ${p.category} | المخزون: ${p.stock} | الصور: ${(p.images || []).length || 1}
+        <div class="product-card-title">${p.productType === "bundle" ? "🔥 " : ""}${escapeHtml(p.name)}</div>
+        <div style="font-size:0.8rem; color:var(--text-secondary); font-weight:700;">
+          ${escapeHtml(p.category)} | المخزون: ${Number(p.stock)} | الصور: ${(p.images || []).length || 1}
         </div>
         <div class="product-card-meta">
-          <span>${p.price} ريال ${p.oldPrice ? `<del style="color:var(--text-secondary); font-size:0.8rem;">${p.oldPrice}</del>` : ""}</span>
-          <span style="font-size:0.75rem;">${p.freeDelivery ? "توصيل مجاني" : ""}</span>
+          <span>${Number(p.price)} ريال ${p.oldPrice ? `<del style="color:var(--text-secondary); font-size:0.78rem;">${Number(p.oldPrice)}</del>` : ""}</span>
+          <span style="font-size:0.74rem;">${p.freeDelivery ? "توصيل مجاني" : ""}</span>
         </div>
         <div class="product-card-actions">
           <button type="button" class="btn-glass edit-btn" style="flex:1; justify-content:center; padding:8px;">
@@ -988,7 +1520,6 @@ function renderMerchantProducts(prods) {
   });
 }
 
-// عرض وإدارة فواتير التاجر
 document.querySelectorAll("#mOrderFilterBar .filter-pill").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll("#mOrderFilterBar .filter-pill").forEach(b => b.classList.remove("active"));
@@ -1030,17 +1561,18 @@ function updateMerchantStatsAndOrders() {
   });
 }
 
-// دالة موحدة لبناء بطاقة الفاتورة المنسدلة (تعمل للتاجر وللمندوب)
+// بناء بطاقة الفاتورة المنسدلة (بدون علامة الهاشتاج #)
 function createOrderAccordionCard(order, openByDefault = false, isMerchant = true) {
   const statusMeta = getStatusMeta(order.status);
+  const cleanInvoiceNum = (order.invoiceNumber || "").replace(/#/g, "");
   const accordion = document.createElement("div");
-  accordion.className = `invoice-accordion glass-panel ${openByDefault ? "open" : ""}`;
+  accordion.className = `invoice-accordion ${openByDefault ? "open" : ""}`;
 
-  const itemsHtml = (order.items || []).map(i => `• <strong>${i.name}</strong> (الكمية: ${i.qty} × ${i.price} ريال)`).join("<br>");
+  const itemsHtml = (order.items || []).map(i => `• <strong>${escapeHtml(i.name)}</strong> (الكمية: ${Number(i.qty)} × ${Number(i.price)} ريال)`).join("<br>");
   const customerPhone = (order.customerPhone || "").replace(/[^0-9]/g, "");
   const courierLine = order.courierName ? `\nالمندوب: ${order.courierName} (${order.courierPhone || ""})` : "";
   const waUpdateMsg = encodeURIComponent(
-    `مرحباً ${order.customerName}\nتحديث بخصوص فاتورتك رقم (#${order.invoiceNumber}) من ${order.storeName || "متجرنا"}:\nالحالة الآن: *${order.status}*${courierLine}\nالإجمالي: ${order.totalAmount} ريال.`
+    `مرحباً ${order.customerName}\nتحديث بخصوص فاتورتك رقم (${cleanInvoiceNum}) من ${order.storeName || "متجرنا"}:\nالحالة الآن: *${order.status}*${courierLine}\nالإجمالي: ${order.totalAmount} ريال.`
   );
 
   const statusButtonsHtml = ORDER_STATUS_LIST.map(st => `
@@ -1060,18 +1592,18 @@ function createOrderAccordionCard(order, openByDefault = false, isMerchant = tru
         <div>
           <div class="inv-number-title">
             <i class="ri-receipt-line" style="color:var(--caramel);"></i>
-            <span>فاتورة #${order.invoiceNumber}</span>
+            <span>فاتورة رقم: ${escapeHtml(cleanInvoiceNum)}</span>
           </div>
-          <div class="inv-customer-brief">${order.customerName} — ${order.customerPhone}</div>
+          <div class="inv-customer-brief">${escapeHtml(order.customerName)} — ${escapeHtml(order.customerPhone)}</div>
           <div class="inv-time-brief">${new Date(order.createdAt || Date.now()).toLocaleString("ar-SA")}</div>
         </div>
       </div>
 
       <div class="invoice-summary-left">
-        <span class="inv-total-badge">${order.totalAmount} ريال</span>
+        <span class="inv-total-badge">${Number(order.totalAmount)} ريال</span>
         <span class="status-badge-lg ${statusMeta.cssClass}">
           <i class="${statusMeta.icon}"></i>
-          <span>${order.status}</span>
+          <span>${escapeHtml(order.status)}</span>
         </span>
       </div>
     </button>
@@ -1079,13 +1611,13 @@ function createOrderAccordionCard(order, openByDefault = false, isMerchant = tru
     <div class="invoice-details-body">
       <div class="status-control-section">
         <div class="status-control-label">
-          <i class="ri-exchange-box-line" style="color:var(--caramel); font-size:1.3rem;"></i>
+          <i class="ri-exchange-box-line" style="color:var(--caramel); font-size:1.25rem;"></i>
           <span>اضغط لتغيير حالة الفاتورة (تتحدث عند الزبون فوراً):</span>
         </div>
 
         <div class="status-dropdown-wrapper">
           <button type="button" class="status-dropdown-trigger">
-            <span>الحالة الحالية: ${order.status}</span>
+            <span>الحالة الحالية: ${escapeHtml(order.status)}</span>
             <i class="ri-arrow-down-s-fill"></i>
           </button>
           <div class="status-dropdown-menu">
@@ -1097,17 +1629,17 @@ function createOrderAccordionCard(order, openByDefault = false, isMerchant = tru
       <div class="inv-info-grid">
         <div class="inv-box glass-inset">
           <h4><i class="ri-user-location-line"></i> بيانات الزبون والعنوان</h4>
-          <div><strong>الاسم:</strong> ${order.customerName}</div>
-          <div><strong>الجوال:</strong> <a href="tel:${order.customerPhone}" style="color:var(--espresso); font-weight:900;">${order.customerPhone}</a></div>
-          <div><strong>العنوان:</strong> ${order.customerAddress || "داخل شرورة"}</div>
-          ${order.courierName ? `<div><strong>المندوب المستلم:</strong> ${order.courierName} (${order.courierPhone})</div>` : ""}
+          <div><strong>الاسم:</strong> ${escapeHtml(order.customerName)}</div>
+          <div><strong>الجوال:</strong> <a href="tel:${escapeHtml(order.customerPhone)}" style="color:var(--espresso); font-weight:900;">${escapeHtml(order.customerPhone)}</a></div>
+          <div><strong>العنوان:</strong> ${escapeHtml(order.customerAddress || "داخل شرورة")}</div>
+          ${order.courierName ? `<div><strong>المندوب المستلم:</strong> ${escapeHtml(order.courierName)} (${escapeHtml(order.courierPhone)})</div>` : ""}
         </div>
 
         <div class="inv-box glass-inset">
           <h4><i class="ri-shopping-bag-3-line"></i> الطلبات</h4>
           <div>${itemsHtml}</div>
           <div style="margin-top:8px; padding-top:8px; border-top:1px dashed rgba(30,19,13,0.15); font-weight:900;">
-            التوصيل: ${order.deliveryFee} ريال | الإجمالي: ${order.totalAmount} ريال
+            التوصيل: ${Number(order.deliveryFee)} ريال | الإجمالي: ${Number(order.totalAmount)} ريال
           </div>
         </div>
       </div>
@@ -1118,7 +1650,7 @@ function createOrderAccordionCard(order, openByDefault = false, isMerchant = tru
           <span>إشعار الزبون عبر واتساب</span>
         </a>
         ${order.gpsLocation ? `
-          <a href="${order.gpsLocation}" target="_blank" class="gps-btn-lg">
+          <a href="${escapeHtml(order.gpsLocation)}" target="_blank" class="gps-btn-lg">
             <i class="ri-map-pin-2-fill"></i>
             <span>فتح موقع الزبون (GPS)</span>
           </a>
@@ -1152,21 +1684,20 @@ function createOrderAccordionCard(order, openByDefault = false, isMerchant = tru
         updatedAt: Date.now()
       };
 
-      // إذا كان المستخدم الحالي مندوب واختار "مع المندوب للتوصيل"، نحفظ اسمه ورقمه للزبون تلقائياً
       if (currentSession && currentSession.role === "staff" && newStatus === "مع المندوب للتوصيل") {
         updatePayload.courierName = currentSession.name;
         updatePayload.courierPhone = currentSession.phone;
       }
 
       await updateDoc(doc(db, "nafal_orders", order.id), updatePayload);
-      showToast(`تم تحديث الفاتورة #${order.invoiceNumber} إلى: ${newStatus}`);
+      showToast(`تم تحديث الفاتورة ${cleanInvoiceNum} إلى: ${newStatus}`);
     });
   });
 
   const delBtn = accordion.querySelector(".del-order-btn");
   if (delBtn) {
     delBtn.addEventListener("click", async () => {
-      if (confirm(`حذف الفاتورة #${order.invoiceNumber}؟`)) {
+      if (confirm(`حذف الفاتورة رقم ${cleanInvoiceNum}؟`)) {
         await deleteDoc(doc(db, "nafal_orders", order.id));
         showToast("تم حذف الفاتورة");
       }
@@ -1176,7 +1707,6 @@ function createOrderAccordionCard(order, openByDefault = false, isMerchant = tru
   return accordion;
 }
 
-// حفظ إعدادات الدوام، رمز الفاتورة، الحد الأدنى، وعروض التوصيل للتاجر
 document.getElementById("mWorkOffersForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!mCurrentStore) return;
@@ -1200,7 +1730,6 @@ document.getElementById("mWorkOffersForm").addEventListener("submit", async (e) 
   showToast("تم حفظ أوقات الدوام وعروض التوصيل لمتجرك");
 });
 
-// إدارة الموظفين والمناديب للتاجر
 document.getElementById("mStaffForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!mCurrentStore) return;
@@ -1222,6 +1751,8 @@ document.getElementById("mStaffForm").addEventListener("submit", async (e) => {
     showToast("تم تحديث بيانات الموظف");
   } else {
     payload.createdAt = Date.now();
+    payload.pinCode = "";
+    payload.trustedDevices = [];
     await addDoc(collection(db, "nafal_staff"), payload);
     showToast("تمت إضافة الموظف بنجاح");
   }
@@ -1254,8 +1785,8 @@ function renderMerchantStaff(staffList) {
     card.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
         <div>
-          <strong style="font-size:1.08rem;">${sf.name} (${sf.role})</strong>
-          <div class="sub-hint">جوال: <span dir="ltr">${sf.phone}</span> | اسم الدخول: <strong dir="ltr">${sf.username}</strong> | كلمة المرور: <strong dir="ltr">${sf.password}</strong></div>
+          <strong style="font-size:1.04rem;">${escapeHtml(sf.name)} (${escapeHtml(sf.role)})</strong>
+          <div class="sub-hint">جوال: <span dir="ltr">${escapeHtml(sf.phone)}</span> | اسم الدخول: <strong dir="ltr">${escapeHtml(sf.username)}</strong> | كلمة المرور: <strong dir="ltr">${escapeHtml(sf.password)}</strong></div>
         </div>
         <div style="display:flex; gap:8px;">
           <button type="button" class="btn-glass edit-sf-btn"><i class="ri-edit-line"></i> تعديل</button>
@@ -1285,7 +1816,6 @@ function renderMerchantStaff(staffList) {
   });
 }
 
-// إرسال طلب تغيير اسم المتجر للإدارة العليا
 document.getElementById("mSendNameRequestBtn").addEventListener("click", async () => {
   if (!mCurrentStore) return;
   const newName = document.getElementById("mRequestedStoreName").value.trim();
@@ -1300,11 +1830,10 @@ document.getElementById("mSendNameRequestBtn").addEventListener("click", async (
   });
 
   document.getElementById("mRequestedStoreName").value = "";
-  document.getElementById("mPendingNameHint").textContent = `تم إرسال طلب تغيير الاسم إلى "${newName}" للإدارة العليا للمراجعة.`;
-  showToast("تم إرسال طلب تغيير الاسم للإدارة العليا");
+  document.getElementById("mPendingNameHint").textContent = `تم إرسال طلب تغيير الاسم إلى "${newName}" للمراجعة.`;
+  showToast("تم إرسال طلب تغيير الاسم للمراجعة");
 });
 
-// رفع شعار التاجر وتحديد موقع المحل بالـ GPS
 document.getElementById("mLogoFileInput").addEventListener("change", async (e) => {
   const file = e.target.files[0];
   if (!file) return;
@@ -1352,7 +1881,6 @@ document.getElementById("mIdentityForm").addEventListener("submit", async (e) =>
   showToast("تم حفظ هوية متجرك وموقع المحل بنجاح");
 });
 
-// أقسام متجر التاجر الداخلية
 function renderMerchantCategories() {
   const select = document.getElementById("mProdCategory");
   const list = document.getElementById("mCategoriesList");
@@ -1368,7 +1896,7 @@ function renderMerchantCategories() {
     const li = document.createElement("li");
     li.className = "cat-item glass-inset";
     li.innerHTML = `
-      <span><i class="ri-price-tag-3-line" style="color:var(--caramel); margin-left:8px;"></i>${cat}</span>
+      <span><i class="ri-price-tag-3-line" style="color:var(--caramel); margin-left:8px;"></i>${escapeHtml(cat)}</span>
       <button type="button" class="btn-danger-glass"><i class="ri-delete-bin-line"></i></button>
     `;
     li.querySelector("button").addEventListener("click", async () => {
@@ -1394,22 +1922,42 @@ document.getElementById("mAddCatBtn").addEventListener("click", async () => {
   }
 });
 
-// تغيير بيانات دخول التاجر
-document.getElementById("mCredentialsForm").addEventListener("submit", async (e) => {
+// تحديث بيانات دخول التاجر والرمز السريع (محمي بالـ PIN إذا كان مفعلاً)
+document.getElementById("mCredentialsForm").addEventListener("submit", (e) => {
   e.preventDefault();
   if (!mCurrentStore) return;
   const newUser = document.getElementById("mSelfNewUser").value.trim();
   const newPass = document.getElementById("mSelfNewPass").value.trim();
+  const newPin = document.getElementById("mSelfPinInput").value.trim();
 
-  await updateDoc(doc(db, "nafal_stores", mCurrentStore.id), {
-    merchantUsername: newUser,
-    merchantPassword: newPass
-  });
+  if (newPin !== "" && !/^\d{4}$/.test(newPin)) {
+    showToast("الرمز السريع يجب أن يتكون من 4 أرقام بالضبط أو اتركه فارغاً");
+    return;
+  }
 
-  currentSession.username = newUser;
-  localStorage.setItem("nafal_portal_session", JSON.stringify(currentSession));
-  document.getElementById("currentUserDisplay").textContent = newUser;
-  showToast("تم تحديث بيانات دخولك كتاجر");
+  requirePinVerification(async () => {
+    await updateDoc(doc(db, "nafal_stores", mCurrentStore.id), {
+      merchantUsername: newUser,
+      merchantPassword: newPass,
+      pinCode: newPin
+    });
+
+    currentSession.username = newUser;
+    currentSession.pinCode = newPin;
+    saveSessionLocally(currentSession);
+    document.getElementById("currentUserDisplay").textContent = newUser;
+    updateQuickLockButtonVisibility();
+    showToast("تم تحديث بيانات الأمان والرمز السريع لمتجرك");
+  }, "أدخل رمزك السريع الحالي لتأكيد تعديل بيانات الأمان:");
+});
+
+document.getElementById("mRevokeAllDevicesBtn").addEventListener("click", () => {
+  if (!mCurrentStore) return;
+  requirePinVerification(async () => {
+    await updateDoc(doc(db, "nafal_stores", mCurrentStore.id), { trustedDevices: [] });
+    showToast("تم إلغاء الوثوق بجميع الأجهزة المسجلة على متجرك");
+    performFullLogout();
+  }, "أدخل الرمز السريع لتأكيد إلغاء الوثوق بجميع الأجهزة:");
 });
 
 // ============================================================================
@@ -1423,15 +1971,27 @@ function initStaffPortal(session) {
   document.getElementById("portalSubtitle").textContent = `${session.staffRole} — صلاحية متابعة وتوصيل الطلبات فقط`;
   document.getElementById("staffWelcomeTitle").textContent = `أهلاً بك يا ${session.name} (${session.staffRole})`;
 
+  // الاستماع لملف الموظف لتحديث الرمز السريع والأجهزة الموثوقة
+  const unsubStaffDoc = onSnapshot(doc(db, "nafal_staff", session.docId), snap => {
+    if (!snap.exists()) return;
+    const sf = snap.data();
+    document.getElementById("staffPinInput").value = sf.pinCode || "";
+    if (currentSession && currentSession.role === "staff") {
+      currentSession.pinCode = sf.pinCode || "";
+      updateQuickLockButtonVisibility();
+    }
+    renderTrustedDevicesUI("staffTrustedDevicesList", sf.trustedDevices || [], "staff", session.docId);
+  });
+
   const qOrders = query(collection(db, "nafal_orders"), where("storeId", "==", session.storeId));
-  const unsub = onSnapshot(qOrders, snap => {
+  const unsubOrders = onSnapshot(qOrders, snap => {
     staffOrdersList = [];
     snap.forEach(d => staffOrdersList.push({ id: d.id, ...d.data() }));
     staffOrdersList.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
     renderStaffOrders();
   });
 
-  activeUnsubscribers.push(unsub);
+  activeUnsubscribers.push(unsubStaffDoc, unsubOrders);
 }
 
 document.querySelectorAll("#staffFilterBar .filter-pill").forEach(btn => {
@@ -1466,17 +2026,33 @@ function renderStaffOrders() {
   });
 }
 
-// استعادة الجلسة تلقائياً عند تحديث الصفحة
-const savedSessionRaw = localStorage.getItem("nafal_portal_session");
-if (savedSessionRaw) {
-  try {
-    const parsed = JSON.parse(savedSessionRaw);
-    if (parsed && parsed.role) {
-      startSession(parsed);
-    }
-  } catch {
-    localStorage.removeItem("nafal_portal_session");
+document.getElementById("staffPinForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  if (!currentSession || currentSession.role !== "staff") return;
+  const newPin = document.getElementById("staffPinInput").value.trim();
+
+  if (newPin !== "" && !/^\d{4}$/.test(newPin)) {
+    showToast("الرمز السريع يجب أن يتكون من 4 أرقام بالضبط أو اتركه فارغاً");
+    return;
   }
-} else {
-  ensurePlatformInitialized();
-}
+
+  requirePinVerification(async () => {
+    await updateDoc(doc(db, "nafal_staff", currentSession.docId), { pinCode: newPin });
+    currentSession.pinCode = newPin;
+    saveSessionLocally(currentSession);
+    updateQuickLockButtonVisibility();
+    showToast("تم حفظ الرمز السريع الخاص بك بنجاح");
+  }, "أدخل رمزك السريع الحالي لتأكيد التعديل:");
+});
+
+document.getElementById("staffRevokeAllDevicesBtn").addEventListener("click", () => {
+  if (!currentSession || currentSession.role !== "staff") return;
+  requirePinVerification(async () => {
+    await updateDoc(doc(db, "nafal_staff", currentSession.docId), { trustedDevices: [] });
+    showToast("تم إلغاء الوثوق بجميع أجهزتك");
+    performFullLogout();
+  }, "أدخل الرمز السريع لتأكيد إلغاء الوثوق بجميع الأجهزة:");
+});
+
+// بدء تشغيل البوابة عبر شاشة فحص وتأمين الجلسة الذكية
+verifySavedSessionOnStartup();

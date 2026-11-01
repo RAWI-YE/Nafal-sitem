@@ -763,4 +763,450 @@ img {
   border: 1px solid rgba(30, 19, 13, 0.08);
   background: #FAF7F2;
   padding: 12px 15px;
-  border-
+  border-radius: 12px;
+  font-size: 0.98rem;
+  font-weight: 800;
+  color: var(--espresso);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.status-option-btn .opt-main { display: flex; align-items: center; gap: 8px; }
+.status-option-btn i { font-size: 1.25rem; }
+.status-option-btn:hover { background: #FFF; border-color: var(--caramel); }
+.status-option-btn.selected { background: var(--espresso); color: #FFF; }
+
+.inv-info-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.inv-box { padding: 14px; font-size: 0.92rem; line-height: 1.7; }
+.inv-box h4 { font-size: 0.96rem; font-weight: 900; color: var(--caramel-dark); margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+
+.inv-actions-row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.whatsapp-btn-lg {
+  flex: 1;
+  background: var(--success);
+  color: #FFF;
+  text-decoration: none;
+  padding: 12px 16px;
+  border-radius: 14px;
+  font-weight: 900;
+  font-size: 0.95rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.gps-btn-lg {
+  background: var(--espresso);
+  color: #FFF;
+  text-decoration: none;
+  padding: 12px 16px;
+  border-radius: 14px;
+  font-weight: 800;
+  font-size: 0.92rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* ==================== النماذج، خزنة الـ API، والأجهزة الموثوقة ==================== */
+.accordion-card { overflow: hidden; }
+
+.accordion-trigger {
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 16px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 1.08rem;
+  font-weight: 900;
+  color: var(--espresso);
+  cursor: pointer;
+}
+
+.trigger-right { display: flex; align-items: center; gap: 10px; }
+.trigger-right i { font-size: 1.4rem; color: var(--caramel); }
+.arrow-icon { font-size: 1.4rem; transition: transform 0.25s ease; }
+.accordion-card.open .arrow-icon { transform: rotate(180deg); }
+
+.accordion-content {
+  display: none;
+  padding: 18px 20px 20px;
+  border-top: 1px solid var(--glass-border-subtle);
+}
+
+.accordion-card.open .accordion-content { display: block; }
+
+.form-card { padding: 20px; }
+.form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+.full-width { grid-column: 1 / -1; }
+.form-group { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.form-group label { font-size: 0.88rem; font-weight: 800; color: var(--roast-brown); }
+
+.input-glass-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1.5px solid #FFF;
+  padding: 0 12px;
+  border-radius: 13px;
+  min-width: 0;
+}
+
+.input-glass-wrap:focus-within { background: #FFF; border-color: var(--caramel); }
+.input-glass-wrap i { color: var(--caramel); font-size: 1.15rem; flex-shrink: 0; }
+
+.input-glass-wrap input,
+.input-glass-wrap select,
+.input-glass-wrap textarea {
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 11px 0;
+  font-size: 0.94rem;
+  font-weight: 700;
+  color: var(--espresso);
+  outline: none;
+  min-width: 0;
+}
+
+.gps-inline-row { display: flex; gap: 8px; }
+
+/* خزنة مفتاح الـ API الخاصة بالأدمن الأعلى */
+.api-vault-box {
+  padding: 16px;
+  border: 2px dashed var(--caramel);
+  background: rgba(255, 252, 247, 0.82);
+}
+
+/* بطاقات الأجهزة الموثوقة */
+.devices-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--glass-border-subtle);
+}
+
+.trusted-devices-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.trusted-device-card {
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid #FFF;
+  border-radius: 16px;
+  padding: 13px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.td-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.td-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: rgba(182, 123, 72, 0.15);
+  color: var(--espresso);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+}
+
+.td-current-badge {
+  background: rgba(31, 175, 84, 0.16);
+  color: var(--status-done-text);
+  font-size: 0.74rem;
+  font-weight: 800;
+  padding: 2px 9px;
+  border-radius: 999px;
+  margin-right: 6px;
+}
+
+.upload-zone {
+  padding: 16px;
+  text-align: center;
+  border: 2px dashed var(--caramel);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.upload-zone i { font-size: 1.8rem; color: var(--caramel); }
+
+.multi-preview-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.preview-thumb-box {
+  position: relative;
+  width: 82px;
+  height: 82px;
+  border-radius: 13px;
+  overflow: hidden;
+  border: 2px solid #FFF;
+  box-shadow: var(--glass-shadow);
+}
+
+.preview-thumb-box img { width: 100%; height: 100%; object-fit: cover; }
+
+.preview-thumb-box button {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--danger);
+  color: #FFF;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+}
+
+.img-preview {
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+  border-radius: 14px;
+  margin-top: 8px;
+  border: 2px solid #FFF;
+}
+
+.checkbox-glass {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 15px;
+  cursor: pointer;
+  font-weight: 800;
+  color: var(--espresso);
+}
+
+.checkbox-glass input { width: 19px; height: 19px; accent-color: var(--espresso); flex-shrink: 0; }
+.form-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
+
+/* الأزرار */
+.btn-primary-glass {
+  background: var(--espresso);
+  color: #FFF;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 12px 20px;
+  border-radius: 14px;
+  font-weight: 900;
+  font-size: 0.94rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  box-shadow: 0 6px 16px rgba(30, 19, 13, 0.16);
+  transition: 0.2s;
+}
+
+.btn-primary-glass:hover { background: var(--caramel); }
+
+.btn-glass, .btn-glass-sm {
+  background: rgba(255, 255, 255, 0.86);
+  color: var(--espresso);
+  border: 1px solid #FFF;
+  padding: 10px 15px;
+  border-radius: 13px;
+  font-weight: 800;
+  font-size: 0.88rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-glass-sm { padding: 7px 13px; border-radius: 999px; font-size: 0.82rem; }
+
+.btn-danger-glass {
+  background: rgba(217, 56, 58, 0.13);
+  color: var(--danger);
+  border: 1px solid rgba(217, 56, 58, 0.3);
+  padding: 8px 13px;
+  border-radius: 11px;
+  font-weight: 800;
+  font-size: 0.84rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.btn-danger-glass:hover { background: var(--danger); color: #FFF; }
+
+/* ==================== شبكة المنتجات (4 بالكمبيوتر و 2 بالجوال) ==================== */
+.products-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+
+.product-card {
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid #FFFFFF;
+  box-shadow: var(--glass-shadow);
+  border-radius: 20px;
+  padding: 9px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.product-card img {
+  width: 100%;
+  height: 155px;
+  object-fit: cover;
+  border-radius: 14px;
+}
+
+.product-card-body {
+  padding: 9px 4px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.product-card-title { font-weight: 900; font-size: 0.94rem; color: var(--espresso); }
+.product-card-meta { display: flex; justify-content: space-between; font-weight: 900; color: var(--caramel-dark); font-size: 0.9rem; }
+.product-card-actions { display: flex; gap: 6px; margin-top: auto; padding-top: 8px; }
+
+.offer-tier { padding: 15px; }
+.tier-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 0.98rem; }
+.tier-head i { color: var(--caramel); font-size: 1.25rem; }
+
+.add-cat-row { display: flex; gap: 8px; margin-bottom: 14px; }
+.flex-1 { flex: 1; min-width: 0; }
+.cat-list { list-style: none; display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.cat-item { display: flex; justify-content: space-between; align-items: center; padding: 11px 14px; font-weight: 800; font-size: 0.9rem; }
+
+.section-sub { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--glass-border-subtle); padding-bottom: 8px; }
+.section-sub i { color: var(--caramel); font-size: 1.25rem; }
+
+.diagnostic-box { margin-bottom: 16px; padding: 15px; border: 2px solid var(--danger); }
+.diag-header { display: flex; align-items: center; gap: 8px; color: var(--danger); margin-bottom: 5px; }
+
+.empty-box {
+  grid-column: 1 / -1;
+  padding: 36px 18px;
+  text-align: center;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* نافذة التحقق بالـ PIN */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(30, 19, 13, 0.4);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 2000;
+}
+
+.modal-card {
+  width: 100%;
+  max-width: 400px;
+  background: rgba(250, 246, 240, 0.97);
+  border: 1.5px solid #FFF;
+  border-radius: 24px;
+  overflow: hidden;
+}
+
+.modal-header {
+  padding: 14px 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--glass-border-subtle);
+}
+
+.modal-title { display: flex; align-items: center; gap: 8px; }
+.modal-title i { color: var(--caramel); font-size: 1.3rem; }
+.modal-title h3 { font-size: 1.02rem; font-weight: 900; }
+
+.icon-close-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(30, 19, 13, 0.08);
+  font-size: 1.15rem;
+  cursor: pointer;
+}
+
+.modal-body { padding: 18px; }
+
+.toast {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 11px 20px;
+  font-weight: 900;
+  font-size: 0.88rem;
+  z-index: 3000;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 92vw;
+  white-space: nowrap;
+}
+
+.toast i { color: var(--success); font-size: 1.25rem; }
+
+/* التجاوب */
+@media (max-width: 1024px) {
+  .products-grid, .stats-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 768px) {
+  .products-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .product-card img { height: 130px; }
+  .form-grid, .inv-info-grid, .cat-list { grid-template-columns: 1fr; }
+  .add-cat-row, .gps-inline-row { flex-direction: column; }
+  .smart-search-toolbar { flex-direction: column; align-items: stretch; }
+  .smart-search-meta { justify-content: flex-end; }
+}

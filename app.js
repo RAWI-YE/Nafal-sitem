@@ -30,7 +30,7 @@ if (getApps().length === 0) {
   db = getFirestore(app);
 }
 
-// متغيرات مفتاح الـ API الديناميكية (تُحدث من خزنة الإدارة العليا)
+// متغيرات مفتاح الـ API الديناميكية (تُحدث من خزنة الإدارة العليا حصرياً)
 let dynamicImgbbApiKey = DEFAULT_IMGBB_KEY;
 let dynamicUploadEndpoint = DEFAULT_UPLOAD_ENDPOINT;
 
@@ -52,6 +52,50 @@ function escapeHtml(str) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+// توحيد الأرقام العربية/الفارسية إلى إنجليزية وتنظيف النص للبحث الذكي
+function normalizeSearchText(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d))
+    .replace(/[۰-۹]/g, d => "۰۱۲۳۴۵۶۷۸۹".indexOf(d))
+    .replace(/[أإآ]/g, "ا")
+    .replace(/ة/g, "ه")
+    .toLowerCase()
+    .trim();
+}
+
+// دالة الفحص الذكي للفاتورة (تطابق رقم الفاتورة، الجوال، آخر 4 أرقام، الاسم، العنوان، أو المنتجات)
+function matchesSmartOrderQuery(order, rawQuery) {
+  if (!rawQuery || !rawQuery.trim()) return true;
+
+  const qNorm = normalizeSearchText(rawQuery);
+  const qCompact = qNorm.replace(/[\s\-#+]/g, "");
+
+  const invNorm = normalizeSearchText(order.invoiceNumber || "");
+  const invCompact = invNorm.replace(/[\s\-#]/g, "");
+
+  const phoneNorm = normalizeSearchText(order.customerPhone || "");
+  const phoneCompact = phoneNorm.replace(/[^0-9]/g, "");
+
+  const nameNorm = normalizeSearchText(order.customerName || "");
+  const addrNorm = normalizeSearchText(order.customerAddress || "");
+  const courierNorm = normalizeSearchText(order.courierName || "");
+  const itemsNorm = (order.items || []).map(i => normalizeSearchText(i.name || "")).join(" ");
+
+  if (qCompact && (invCompact.includes(qCompact) || phoneCompact.includes(qCompact))) {
+    return true;
+  }
+
+  return (
+    invNorm.includes(qNorm) ||
+    phoneNorm.includes(qNorm) ||
+    nameNorm.includes(qNorm) ||
+    addrNorm.includes(qNorm) ||
+    courierNorm.includes(qNorm) ||
+    itemsNorm.includes(qNorm)
+  );
 }
 
 // توليد أو جلب البصمة الفريدة للجهاز الحالي (Device ID)
@@ -245,7 +289,6 @@ function getAccountDocRef(role, docId) {
   return null;
 }
 
-// تسجيل أو تحديث الجهاز الحالي ضمن قائمة الأجهزة الموثوقة للمستخدم
 async function registerTrustedDeviceInDb(role, docId, existingDevices = []) {
   const devId = getOrCreateDeviceId();
   const devName = getDeviceFriendlyName();
@@ -271,7 +314,6 @@ async function registerTrustedDeviceInDb(role, docId, existingDevices = []) {
   return list;
 }
 
-// عرض قائمة الأجهزة الموثوقة في الإعدادات (للإدارة العليا، التاجر، والموظف)
 function renderTrustedDevicesUI(containerId, devices = [], role, docId) {
   const container = document.getElementById(containerId);
   if (!container) return;
@@ -294,7 +336,7 @@ function renderTrustedDevicesUI(containerId, devices = [], role, docId) {
     card.className = "trusted-device-card";
     card.innerHTML = `
       <div class="td-info">
-        <div class="td-icon"><i class="${dev.deviceName.includes('جوال') || dev.deviceName.includes('آيفون') ? 'ri-smartphone-line' : 'ri-macbook-line'}"></i></div>
+        <div class="td-icon"><i class="${(dev.deviceName || '').includes('جوال') || (dev.deviceName || '').includes('آيفون') ? 'ri-smartphone-line' : 'ri-macbook-line'}"></i></div>
         <div>
           <strong style="font-size:0.95rem;">
             ${escapeHtml(dev.deviceName || "جهاز موثوق")}
@@ -326,7 +368,7 @@ function renderTrustedDevicesUI(containerId, devices = [], role, docId) {
 }
 
 // ============================================================================
-// 5. نافذة التحقق بالرمز السريع (4-Digit PIN Modal) للعمليات الحساسة أو الإعداد الأول
+// 5. نافذة التحقق بالرمز السريع (4-Digit PIN Modal) للعمليات الحساسة
 // ============================================================================
 let secModalCallback = null;
 
@@ -352,7 +394,7 @@ document.getElementById("closeSecModalBtn").addEventListener("click", closeSecur
 document.getElementById("secModalCancelBtn").addEventListener("click", closeSecurityModal);
 
 document.getElementById("secModalConfirmBtn").addEventListener("click", () => {
-  const val = document.getElementById("secModalPinInput").value.trim();
+  const val = normalizeSearchText(document.getElementById("secModalPinInput").value);
   if (typeof secModalCallback === "function") {
     secModalCallback(val);
   }
@@ -365,7 +407,6 @@ document.getElementById("secModalPinInput").addEventListener("keydown", (e) => {
   }
 });
 
-// دالة تطلب الرمز السريع قبل تنفيذ أي إجراء حساس (إذا كان المستخدم مفعلاً للـ PIN)
 function requirePinVerification(actionFn, customPrompt = "أدخل رمز الدخول السريع (4 أرقام) لتأكيد حفظ التغييرات الحساسة:") {
   if (!currentSession || !currentSession.pinCode || currentSession.pinCode.length !== 4) {
     actionFn();
@@ -387,7 +428,6 @@ function requirePinVerification(actionFn, customPrompt = "أدخل رمز الد
   });
 }
 
-// اقتراح لطيف لإعداد رمز سريع (4 أرقام) بعد تسجيل الدخول وتفعيل الوثوق بالجهاز
 function offerQuickPinSetupIfMissing() {
   if (!currentSession || (currentSession.pinCode && currentSession.pinCode.length === 4)) return;
 
@@ -553,7 +593,6 @@ async function verifySavedSessionOnStartup() {
       return;
     }
 
-    // تحديث وقت آخر استخدام للجهاز الموثوق
     registerTrustedDeviceInDb(saved.role, saved.docId, trustedList).catch(() => {});
 
     let sessionPayload = null;
@@ -589,7 +628,6 @@ async function verifySavedSessionOnStartup() {
 
     currentSession = sessionPayload;
 
-    // إذا كان المستخدم مفعلاً لرمز الـ PIN، نفتح له شاشة القفل السريع بدلاً من كلمة المرور
     if (sessionPayload.pinCode && sessionPayload.pinCode.length === 4) {
       triggerPinLockScreen();
     } else {
@@ -753,7 +791,6 @@ function performFullLogout() {
 
 document.getElementById("logoutBtn").addEventListener("click", performFullLogout);
 
-// تفعيل أزرار التنقل للتبويبات الثلاثة
 function setupTabNavigation(navBarId, viewContainerId) {
   const navBar = document.getElementById(navBarId);
   const viewContainer = document.getElementById(viewContainerId);
@@ -781,13 +818,13 @@ let saMarketCategories = ["متاجر القهوة والمحامص", "الأس�
 let saAllStores = [];
 let saAllProducts = [];
 let saAllOrders = [];
+let saStoreSearchQuery = "";
 
 function initSuperAdminPortal() {
   const nextMonth = new Date();
   nextMonth.setMonth(nextMonth.getMonth() + 1);
   document.getElementById("saSubExpiry").value = nextMonth.toISOString().split("T")[0];
 
-  // الاستماع لبيانات أمان الإدارة العليا والأجهزة الموثوقة
   const unsubAdminDoc = onSnapshot(doc(db, "nafal_platform", "superAdmin"), snap => {
     if (!snap.exists()) return;
     const d = snap.data();
@@ -801,7 +838,6 @@ function initSuperAdminPortal() {
     renderTrustedDevicesUI("saTrustedDevicesList", d.trustedDevices || [], "superadmin", "superAdmin");
   });
 
-  // الاستماع لإعدادات المنصة وخزنة مفتاح الـ API
   const unsubConfig = onSnapshot(doc(db, "nafal_platform", "marketConfig"), snap => {
     if (snap.exists()) {
       const d = snap.data();
@@ -855,6 +891,20 @@ function initSuperAdminPortal() {
 
   activeUnsubscribers.push(unsubAdminDoc, unsubConfig, unsubStores, unsubProds, unsubOrders, unsubNameReqs);
 }
+
+// البحث الذكي في المتاجر للإدارة العليا
+document.getElementById("saStoreSearchInput").addEventListener("input", (e) => {
+  saStoreSearchQuery = e.target.value;
+  document.getElementById("saClearStoreSearchBtn").classList.toggle("hidden", !saStoreSearchQuery.trim());
+  updateSaStatsAndStoresUI();
+});
+
+document.getElementById("saClearStoreSearchBtn").addEventListener("click", () => {
+  document.getElementById("saStoreSearchInput").value = "";
+  saStoreSearchQuery = "";
+  document.getElementById("saClearStoreSearchBtn").classList.add("hidden");
+  updateSaStatsAndStoresUI();
+});
 
 document.getElementById("toggleSaStoreFormBtn").addEventListener("click", () => {
   document.getElementById("saStoreFormAccordion").classList.toggle("open");
@@ -974,17 +1024,24 @@ function updateSaStatsAndStoresUI() {
   const container = document.getElementById("saStoresAccordionList");
   container.innerHTML = "";
 
-  if (saAllStores.length === 0) {
+  const qNorm = normalizeSearchText(saStoreSearchQuery);
+  const filteredStores = saAllStores.filter(st => {
+    if (!qNorm) return true;
+    const target = normalizeSearchText(`${st.name} ${st.merchantUsername} ${st.invoicePrefix} ${st.whatsappNumber} ${st.marketCategory}`);
+    return target.includes(qNorm);
+  });
+
+  if (filteredStores.length === 0) {
     container.innerHTML = `
       <div class="empty-box glass-panel">
         <i class="ri-store-2-line"></i>
-        <span>لا توجد متاجر مسجلة حالياً. أنشئ أول متجر من النموذج أعلاه.</span>
+        <span>${qNorm ? "لا توجد متاجر مطابقة لبحثك" : "لا توجد متاجر مسجلة حالياً. أنشئ أول متجر من النموذج أعلاه."}</span>
       </div>
     `;
     return;
   }
 
-  saAllStores.forEach(st => {
+  filteredStores.forEach(st => {
     const isExpired = st.subExpiry && st.subExpiry < todayStr;
     const isMaintenance = st.storeStatus === "maintenance" || isExpired;
     const storeProdsCount = saAllProducts.filter(p => p.storeId === st.id).length;
@@ -1148,7 +1205,6 @@ function renderSaNameRequests(requests) {
   });
 }
 
-// رفع شعار المنصة وحفظ إعدادات السوق ومفتاح الـ API (حصرياً للإدارة العليا)
 document.getElementById("saPlatformLogoFile").addEventListener("change", async (e) => {
   const file = e.target.files[0];
   if (!file) return;
@@ -1192,12 +1248,11 @@ document.getElementById("saPlatformForm").addEventListener("submit", (e) => {
   }, "أدخل رمز الأمان (4 أرقام) لتأكيد حفظ إعدادات المنصة ومفتاح الـ API:");
 });
 
-// تحديث بيانات دخول الإدارة العليا والرمز السريع
 document.getElementById("saCredentialsForm").addEventListener("submit", (e) => {
   e.preventDefault();
   const newUser = document.getElementById("saAdminNewUser").value.trim();
   const newPass = document.getElementById("saAdminNewPass").value.trim();
-  const newPin = document.getElementById("saAdminPinInput").value.trim();
+  const newPin = normalizeSearchText(document.getElementById("saAdminPinInput").value);
 
   if (newPin !== "" && !/^\d{4}$/.test(newPin)) {
     showToast("الرمز السريع يجب أن يتكون من 4 أرقام بالضبط أو اتركه فارغاً");
@@ -1230,13 +1285,14 @@ document.getElementById("saRevokeAllDevicesBtn").addEventListener("click", () =>
 });
 
 // ============================================================================
-// القسم الثاني: منطق التاجر (Merchant View - صاحب المتجر)
+// القسم الثاني: منطق التاجر (Merchant View - صاحب المتجر) + البحث الذكي الفوري
 // ============================================================================
 let mCurrentStore = null;
 let mStoreCategories = ["المنتجات المميزة", "بكجات وعروض", "أصناف متنوعة"];
 let mUploadedImagesList = [];
 let mAllOrders = [];
 let mSelectedOrderFilter = "all";
+let mOrderSearchQuery = "";
 
 function initMerchantPortal(storeId) {
   const unsubStore = onSnapshot(doc(db, "nafal_stores", storeId), snap => {
@@ -1275,6 +1331,20 @@ function initMerchantPortal(storeId) {
 
   activeUnsubscribers.push(unsubStore, unsubProds, unsubOrders, unsubStaff);
 }
+
+// أحداث محرك البحث الذكي في فواتير التاجر
+document.getElementById("mOrderSearchInput").addEventListener("input", (e) => {
+  mOrderSearchQuery = e.target.value;
+  document.getElementById("mClearOrderSearchBtn").classList.toggle("hidden", !mOrderSearchQuery.trim());
+  updateMerchantStatsAndOrders();
+});
+
+document.getElementById("mClearOrderSearchBtn").addEventListener("click", () => {
+  document.getElementById("mOrderSearchInput").value = "";
+  mOrderSearchQuery = "";
+  document.getElementById("mClearOrderSearchBtn").classList.add("hidden");
+  updateMerchantStatsAndOrders();
+});
 
 function populateMerchantUI(st) {
   document.getElementById("portalTitle").textContent = st.name;
@@ -1540,24 +1610,39 @@ function updateMerchantStatsAndOrders() {
   document.getElementById("mOrdersBadge").textContent = newCount;
 
   const container = document.getElementById("mOrdersAccordionList");
+  const countBadge = document.getElementById("mOrderSearchCountBadge");
   container.innerHTML = "";
 
-  const filtered = mSelectedOrderFilter === "all"
-    ? mAllOrders
-    : mAllOrders.filter(o => o.status === mSelectedOrderFilter);
+  const isSearching = mOrderSearchQuery.trim() !== "";
+
+  const filtered = mAllOrders.filter(order => {
+    const matchStatus = mSelectedOrderFilter === "all" || order.status === mSelectedOrderFilter;
+    const matchSearch = matchesSmartOrderQuery(order, mOrderSearchQuery);
+    return matchStatus && matchSearch;
+  });
+
+  if (countBadge) {
+    if (isSearching || mSelectedOrderFilter !== "all") {
+      countBadge.textContent = `${filtered.length} فاتورة مطابقة`;
+    } else {
+      countBadge.textContent = `إجمالي الفواتير: ${mAllOrders.length}`;
+    }
+  }
 
   if (filtered.length === 0) {
     container.innerHTML = `
       <div class="empty-box glass-panel">
         <i class="ri-inbox-2-line"></i>
-        <span>لا توجد فواتير في هذا التصنيف حالياً</span>
+        <span>${isSearching ? "لا توجد فاتورة مطابقة لبحثك.. جرب البحث بآخر 4 أرقام من الجوال أو الفاتورة" : "لا توجد فواتير في هذا التصنيف حالياً"}</span>
       </div>
     `;
     return;
   }
 
   filtered.forEach((order, index) => {
-    container.appendChild(createOrderAccordionCard(order, index === 0 && order.status === "جديد - قيد المراجعة", true));
+    // فتح الفاتورة تلقائياً إذا كانت نتيجة بحث مباشرة أو طلب جديد في أعلى القائمة
+    const shouldOpen = (isSearching && index === 0) || (index === 0 && order.status === "جديد - قيد المراجعة");
+    container.appendChild(createOrderAccordionCard(order, shouldOpen, true));
   });
 }
 
@@ -1594,7 +1679,7 @@ function createOrderAccordionCard(order, openByDefault = false, isMerchant = tru
             <i class="ri-receipt-line" style="color:var(--caramel);"></i>
             <span>فاتورة رقم: ${escapeHtml(cleanInvoiceNum)}</span>
           </div>
-          <div class="inv-customer-brief">${escapeHtml(order.customerName)} — ${escapeHtml(order.customerPhone)}</div>
+          <div class="inv-customer-brief">${escapeHtml(order.customerName)} — <span dir="ltr">${escapeHtml(order.customerPhone)}</span></div>
           <div class="inv-time-brief">${new Date(order.createdAt || Date.now()).toLocaleString("ar-SA")}</div>
         </div>
       </div>
@@ -1630,7 +1715,7 @@ function createOrderAccordionCard(order, openByDefault = false, isMerchant = tru
         <div class="inv-box glass-inset">
           <h4><i class="ri-user-location-line"></i> بيانات الزبون والعنوان</h4>
           <div><strong>الاسم:</strong> ${escapeHtml(order.customerName)}</div>
-          <div><strong>الجوال:</strong> <a href="tel:${escapeHtml(order.customerPhone)}" style="color:var(--espresso); font-weight:900;">${escapeHtml(order.customerPhone)}</a></div>
+          <div><strong>الجوال:</strong> <a href="tel:${escapeHtml(order.customerPhone)}" style="color:var(--espresso); font-weight:900;" dir="ltr">${escapeHtml(order.customerPhone)}</a></div>
           <div><strong>العنوان:</strong> ${escapeHtml(order.customerAddress || "داخل شرورة")}</div>
           ${order.courierName ? `<div><strong>المندوب المستلم:</strong> ${escapeHtml(order.courierName)} (${escapeHtml(order.courierPhone)})</div>` : ""}
         </div>
@@ -1922,13 +2007,12 @@ document.getElementById("mAddCatBtn").addEventListener("click", async () => {
   }
 });
 
-// تحديث بيانات دخول التاجر والرمز السريع (محمي بالـ PIN إذا كان مفعلاً)
 document.getElementById("mCredentialsForm").addEventListener("submit", (e) => {
   e.preventDefault();
   if (!mCurrentStore) return;
   const newUser = document.getElementById("mSelfNewUser").value.trim();
   const newPass = document.getElementById("mSelfNewPass").value.trim();
-  const newPin = document.getElementById("mSelfPinInput").value.trim();
+  const newPin = normalizeSearchText(document.getElementById("mSelfPinInput").value);
 
   if (newPin !== "" && !/^\d{4}$/.test(newPin)) {
     showToast("الرمز السريع يجب أن يتكون من 4 أرقام بالضبط أو اتركه فارغاً");
@@ -1961,17 +2045,17 @@ document.getElementById("mRevokeAllDevicesBtn").addEventListener("click", () => 
 });
 
 // ============================================================================
-// القسم الثالث: منطق الموظف / مندوب التوصيل (Staff / Courier View)
+// القسم الثالث: منطق الموظف / مندوب التوصيل (Staff / Courier View) + البحث الذكي
 // ============================================================================
 let staffOrdersList = [];
 let staffFilterMode = "active";
+let staffOrderSearchQuery = "";
 
 function initStaffPortal(session) {
   document.getElementById("portalTitle").textContent = `مهام: ${session.name}`;
   document.getElementById("portalSubtitle").textContent = `${session.staffRole} — صلاحية متابعة وتوصيل الطلبات فقط`;
   document.getElementById("staffWelcomeTitle").textContent = `أهلاً بك يا ${session.name} (${session.staffRole})`;
 
-  // الاستماع لملف الموظف لتحديث الرمز السريع والأجهزة الموثوقة
   const unsubStaffDoc = onSnapshot(doc(db, "nafal_staff", session.docId), snap => {
     if (!snap.exists()) return;
     const sf = snap.data();
@@ -1994,6 +2078,20 @@ function initStaffPortal(session) {
   activeUnsubscribers.push(unsubStaffDoc, unsubOrders);
 }
 
+// البحث الذكي في طلبات المندوب
+document.getElementById("staffOrderSearchInput").addEventListener("input", (e) => {
+  staffOrderSearchQuery = e.target.value;
+  document.getElementById("staffClearOrderSearchBtn").classList.toggle("hidden", !staffOrderSearchQuery.trim());
+  renderStaffOrders();
+});
+
+document.getElementById("staffClearOrderSearchBtn").addEventListener("click", () => {
+  document.getElementById("staffOrderSearchInput").value = "";
+  staffOrderSearchQuery = "";
+  document.getElementById("staffClearOrderSearchBtn").classList.add("hidden");
+  renderStaffOrders();
+});
+
 document.querySelectorAll("#staffFilterBar .filter-pill").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll("#staffFilterBar .filter-pill").forEach(b => b.classList.remove("active"));
@@ -2007,15 +2105,19 @@ function renderStaffOrders() {
   const container = document.getElementById("staffOrdersAccordionList");
   container.innerHTML = "";
 
-  const filtered = staffFilterMode === "active"
-    ? staffOrdersList.filter(o => o.status !== "تم التوصيل" && o.status !== "ملغي")
-    : staffOrdersList.filter(o => o.status === "تم التوصيل");
+  const filtered = staffOrdersList.filter(o => {
+    const matchTab = staffFilterMode === "active"
+      ? (o.status !== "تم التوصيل" && o.status !== "ملغي")
+      : (o.status === "تم التوصيل");
+    const matchSearch = matchesSmartOrderQuery(o, staffOrderSearchQuery);
+    return matchTab && matchSearch;
+  });
 
   if (filtered.length === 0) {
     container.innerHTML = `
       <div class="empty-box glass-panel">
         <i class="ri-e-bike-2-line"></i>
-        <span>لا توجد طلبات في هذه القائمة حالياً</span>
+        <span>${staffOrderSearchQuery.trim() ? "لا توجد طلبات مطابقة لبحثك" : "لا توجد طلبات في هذه القائمة حالياً"}</span>
       </div>
     `;
     return;
@@ -2029,7 +2131,7 @@ function renderStaffOrders() {
 document.getElementById("staffPinForm").addEventListener("submit", (e) => {
   e.preventDefault();
   if (!currentSession || currentSession.role !== "staff") return;
-  const newPin = document.getElementById("staffPinInput").value.trim();
+  const newPin = normalizeSearchText(document.getElementById("staffPinInput").value);
 
   if (newPin !== "" && !/^\d{4}$/.test(newPin)) {
     showToast("الرمز السريع يجب أن يتكون من 4 أرقام بالضبط أو اتركه فارغاً");

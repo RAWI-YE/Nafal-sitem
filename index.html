@@ -372,6 +372,17 @@
             </div>
           </div>
 
+          <!-- شريط البحث الذكي في المتاجر للإدارة العليا -->
+          <div class="smart-search-toolbar glass-panel">
+            <div class="smart-search-input-wrap">
+              <i class="ri-search-eye-line search-lead-icon"></i>
+              <input type="text" id="saStoreSearchInput" placeholder="ابحث باسم المتجر، اسم المستخدم، رمز الفاتورة، أو رقم واتساب التاجر...">
+              <button type="button" id="saClearStoreSearchBtn" class="clear-search-icon-btn hidden" title="مسح البحث">
+                <i class="ri-close-circle-fill"></i>
+              </button>
+            </div>
+          </div>
+
           <div id="saStoresAccordionList" class="orders-accordion-list"></div>
         </section>
 
@@ -540,7 +551,7 @@
             <div class="form-group full-width">
               <label>رمز الدخول السريع وتأكيد العمليات الحساسة (4 أرقام — اتركه فارغاً لإلغائه)</label>
               <div class="input-glass-wrap">
-                <i class="ri-Close-circle-line ri-dialpad-line"></i>
+                <i class="ri-dialpad-line"></i>
                 <input type="password" id="saAdminPinInput" maxlength="4" pattern="\d{4}" inputmode="numeric" placeholder="مثال: 1234 (4 أرقام فقط)" dir="ltr">
               </div>
               <small class="sub-hint">يُطلب منك هذا الرمز عند فتح البوابة من جهاز موثوق، أو بعد الخمول، أو قبل تعديل البيانات الحساسة.</small>
@@ -653,14 +664,14 @@
           </button>
         </nav>
 
-        <!-- تبويب التاجر 1: الفواتير والطلبات -->
+        <!-- تبويب التاجر 1: الفواتير والطلبات (مزود بمحرك البحث الذكي الفوري) -->
         <section id="mOrdersTab" class="tab-panel active">
           <div class="panel-header">
             <div class="panel-title">
               <i class="ri-shopping-bag-3-line"></i>
               <div>
                 <h2>فواتير وطلبات متجرك</h2>
-                <p class="sub-hint">اضغط على أي فاتورة لفتحها وتغيير حالتها من القائمة الكبيرة الواضحة</p>
+                <p class="sub-hint">ابحث فوراً برقم الفاتورة أو الجوال أو اسم الزبون، واضغط على أي فاتورة لتحديث حالتها</p>
               </div>
             </div>
 
@@ -672,6 +683,20 @@
               <button type="button" class="filter-pill" data-status="مع المندوب للتوصيل">مع المندوب</button>
               <button type="button" class="filter-pill" data-status="تم التوصيل">تم التوصيل</button>
               <button type="button" class="filter-pill" data-status="ملغي">ملغي</button>
+            </div>
+          </div>
+
+          <!-- شريط البحث الذكي في فواتير التاجر -->
+          <div class="smart-search-toolbar glass-panel">
+            <div class="smart-search-input-wrap">
+              <i class="ri-search-eye-line search-lead-icon"></i>
+              <input type="text" id="mOrderSearchInput" placeholder="بحث ذكي: اكتب رقم الفاتورة، أو رقم جوال الزبون (أو آخر 4 أرقام)، أو اسم العميل...">
+              <button type="button" id="mClearOrderSearchBtn" class="clear-search-icon-btn hidden" title="مسح البحث">
+                <i class="ri-close-circle-fill"></i>
+              </button>
+            </div>
+            <div class="smart-search-meta">
+              <span id="mOrderSearchCountBadge" class="search-count-pill">كل الفواتير</span>
             </div>
           </div>
 
@@ -1210,14 +1235,14 @@
           </button>
         </nav>
 
-        <!-- تبويب الموظف 1: الطلبات -->
+        <!-- تبويب الموظف 1: الطلبات (مزود أيضاً ببحث ذكي سريع للمندوب) -->
         <section id="staffOrdersTab" class="tab-panel active">
           <div class="panel-header">
             <div class="panel-title">
               <i class="ri-e-bike-2-fill"></i>
               <div>
                 <h2 id="staffWelcomeTitle">لوحة مهام التوصيل والتجهيز</h2>
-                <p class="sub-hint">اضغط على أي طلب لفتحه، واستلامه للتوصيل، أو فتح موقع العميل على الخريطة</p>
+                <p class="sub-hint">ابحث برقم الفاتورة أو الجوال، واضغط على أي طلب لاستلامه أو فتح موقع العميل</p>
               </div>
             </div>
 
@@ -1227,10 +1252,21 @@
             </div>
           </div>
 
+          <!-- شريط البحث الذكي للمندوب -->
+          <div class="smart-search-toolbar glass-panel">
+            <div class="smart-search-input-wrap">
+              <i class="ri-search-eye-line search-lead-icon"></i>
+              <input type="text" id="staffOrderSearchInput" placeholder="ابحث برقم الفاتورة، أو رقم جوال العميل، أو الاسم...">
+              <button type="button" id="staffClearOrderSearchBtn" class="clear-search-icon-btn hidden" title="مسح البحث">
+                <i class="ri-close-circle-fill"></i>
+              </button>
+            </div>
+          </div>
+
           <div id="staffOrdersAccordionList" class="orders-accordion-list"></div>
         </section>
 
-        <!-- تبويب الموظف 2: الأمان والأجهزة الموثوقة (بدون صلاحية تغيير كلمة المرور الأساسية) -->
+        <!-- تبويب الموظف 2: الأمان والأجهزة الموثوقة -->
         <section id="staffSecurityTab" class="tab-panel">
           <div class="panel-header">
             <div class="panel-title">

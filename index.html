@@ -104,6 +104,9 @@
           <div class="input-glass-wrap">
             <i class="ri-lock-password-line"></i>
             <input type="password" id="loginPassword" placeholder="••••••••" dir="ltr" autocomplete="current-password" required>
+            <button type="button" class="toggle-eye-btn" data-target="loginPassword" title="إظهار / إخفاء">
+              <i class="ri-eye-line"></i>
+            </button>
           </div>
         </div>
 
@@ -129,6 +132,20 @@
 
   <!-- ==================== 4. الهيكل العام بعد فتح الجلسة ==================== -->
   <div id="portalApp" class="hidden">
+
+    <!-- شريط تنبيه التحكم الشامل (يظهر عندما يدخل الأدمن الأعلى لإدارة متجر تاجر) -->
+    <div id="saImpersonationBanner" class="impersonation-banner hidden">
+      <div class="container impersonation-inner">
+        <div class="imp-text">
+          <i class="ri-shield-star-fill"></i>
+          <span>وضع الإدارة العليا الشامل: أنت تدير الآن متجر <strong id="saImpersonatedStoreName"></strong> بكامل الصلاحيات</span>
+        </div>
+        <button type="button" id="saExitImpersonationBtn" class="btn-glass-sm">
+          <i class="ri-arrow-go-back-line"></i>
+          <span>العودة للوحة الإدارة العليا</span>
+        </button>
+      </div>
+    </div>
 
     <!-- الشريط العلوي الموحد -->
     <header class="top-header">
@@ -218,7 +235,7 @@
         <nav class="nav-bar glass-panel" id="saNavBar">
           <button type="button" class="nav-btn active" data-tab="saStoresTab">
             <i class="ri-store-3-line"></i>
-            <span>المتاجر والاشتراكات</span>
+            <span>المتاجر، الرموز، والاشتراكات</span>
           </button>
           <button type="button" class="nav-btn" data-tab="saNameRequestsTab">
             <i class="ri-shield-check-line"></i>
@@ -235,7 +252,7 @@
           </button>
         </nav>
 
-        <!-- تبويب 1: إدارة المتاجر والاشتراكات -->
+        <!-- تبويب 1: إدارة المتاجر، كشف/تغيير الرموز السرية، والاشتراكات -->
         <section id="saStoresTab" class="tab-panel active">
           
           <div class="accordion-card glass-panel open" id="saStoreFormAccordion">
@@ -296,6 +313,49 @@
                   <div class="input-glass-wrap">
                     <i class="ri-key-2-line"></i>
                     <input type="text" id="saMerchantPassword" placeholder="123456" dir="ltr" required>
+                    <button type="button" class="toggle-eye-btn" data-target="saMerchantPassword" title="إظهار / إخفاء">
+                      <i class="ri-eye-off-line"></i>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- تحكم الإدارة العليا في الرمز السريع للتاجر وساعات الدوام والتوصيل -->
+                <div class="form-group">
+                  <label>رمز الدخول السريع للتاجر (PIN - 4 أرقام أو اتركه فارغاً لإلغائه)</label>
+                  <div class="input-glass-wrap">
+                    <i class="ri-dialpad-line"></i>
+                    <input type="text" id="saMerchantPin" maxlength="4" inputmode="numeric" placeholder="غير مفعل (اتركه فارغاً أو اكتب 4 أرقام)" dir="ltr">
+                    <button type="button" class="toggle-eye-btn" data-target="saMerchantPin" title="إظهار / إخفاء">
+                      <i class="ri-eye-off-line"></i>
+                    </button>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label>نظام فتح وإغلاق المتجر</label>
+                  <div class="input-glass-wrap">
+                    <i class="ri-door-open-line"></i>
+                    <select id="saWorkMode">
+                      <option value="24h">مفتوح 24 ساعة</option>
+                      <option value="schedule">حسب ساعات الدوام</option>
+                      <option value="closed">مغلق مؤقتاً</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label>رسوم التوصيل الأساسية للمتجر (ريال)</label>
+                  <div class="input-glass-wrap">
+                    <i class="ri-e-bike-2-line"></i>
+                    <input type="number" id="saBaseDeliveryFee" min="0" value="15">
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label>الحد الأدنى للطلب من المتجر (ريال)</label>
+                  <div class="input-glass-wrap">
+                    <i class="ri-shopping-basket-2-line"></i>
+                    <input type="number" id="saMinOrderAmount" min="0" value="0">
                   </div>
                 </div>
 
@@ -351,7 +411,7 @@
                 <div class="form-actions full-width">
                   <button type="submit" id="saSaveStoreBtn" class="btn-primary-glass">
                     <i class="ri-save-3-line"></i>
-                    <span>حفظ المتجر واعتماد الاشتراك</span>
+                    <span>حفظ المتجر واعتماد الإعدادات</span>
                   </button>
                   <button type="button" id="saResetStoreFormBtn" class="btn-glass">
                     <i class="ri-refresh-line"></i>
@@ -366,8 +426,8 @@
             <div class="panel-title">
               <i class="ri-building-4-line"></i>
               <div>
-                <h2>المتاجر المسجلة في منصة نفال</h2>
-                <p class="sub-hint">اضغط على أي متجر لفتح ملفه الكامل، معرفة عدد منتجاته، وتجديد اشتراكه</p>
+                <h2>المتاجر المسجلة في منصة نفال (تحكم شامل)</h2>
+                <p class="sub-hint">اضغط على أي متجر لكشف رمزه السريع (PIN)، أو تصفيره، أو الدخول للوحة التاجر وإدارتها بالكامل</p>
               </div>
             </div>
           </div>
@@ -459,7 +519,10 @@
                   <label>مفتاح الـ API الحالي (ImgBB API Key) *</label>
                   <div class="input-glass-wrap">
                     <i class="ri-shield-keyhole-line"></i>
-                    <input type="text" id="saImgbbApiKeyInput" placeholder="أدخل مفتاح الـ API هنا" dir="ltr" required>
+                    <input type="password" id="saImgbbApiKeyInput" placeholder="أدخل مفتاح الـ API هنا" dir="ltr" required>
+                    <button type="button" class="toggle-eye-btn" data-target="saImgbbApiKeyInput" title="إظهار / إخفاء المفتاح">
+                      <i class="ri-eye-line"></i>
+                    </button>
                   </div>
                 </div>
 
@@ -514,14 +577,14 @@
           </div>
         </section>
 
-        <!-- تبويب 4: الأمان، الرمز السريع، والأجهزة الموثوقة للإدارة العليا -->
+        <!-- تبويب 4: الأمان، الرمز السريع، والأجهزة الموثوقة للإدارة العليا (معفى من قيود الرمز القديم) -->
         <section id="saSecurityTab" class="tab-panel">
           <div class="panel-header">
             <div class="panel-title">
               <i class="ri-shield-keyhole-line"></i>
               <div>
                 <h2>مركز الأمان والأجهزة الموثوقة (الإدارة العليا)</h2>
-                <p class="sub-hint">تحكم ببيانات دخولك، رمز الـ PIN السريع (4 أرقام)، والأجهزة المسموح لها بالدخول</p>
+                <p class="sub-hint">يمكنك تعديل كلمة مرورك أو رمزك السريع (4 أرقام) أو إلغاؤه في أي وقت مباشرة بدون قيود</p>
               </div>
             </div>
           </div>
@@ -545,16 +608,22 @@
               <div class="input-glass-wrap">
                 <i class="ri-lock-password-line"></i>
                 <input type="text" id="saAdminNewPass" dir="ltr" required>
+                <button type="button" class="toggle-eye-btn" data-target="saAdminNewPass" title="إظهار / إخفاء">
+                  <i class="ri-eye-off-line"></i>
+                </button>
               </div>
             </div>
 
             <div class="form-group full-width">
-              <label>رمز الدخول السريع وتأكيد العمليات الحساسة (4 أرقام — اتركه فارغاً لإلغائه)</label>
+              <label>رمز الدخول السريع الخاص بك (4 أرقام — اتركه فارغاً لإلغائه)</label>
               <div class="input-glass-wrap">
                 <i class="ri-dialpad-line"></i>
-                <input type="password" id="saAdminPinInput" maxlength="4" pattern="\d{4}" inputmode="numeric" placeholder="مثال: 1234 (4 أرقام فقط)" dir="ltr">
+                <input type="text" id="saAdminPinInput" maxlength="4" pattern="\d{4}" inputmode="numeric" placeholder="مثال: 1234 (أو اتركه فارغاً لإلغاء القفل السريع)" dir="ltr">
+                <button type="button" class="toggle-eye-btn" data-target="saAdminPinInput" title="إظهار / إخفاء">
+                  <i class="ri-eye-off-line"></i>
+                </button>
               </div>
-              <small class="sub-hint">يُطلب منك هذا الرمز عند فتح البوابة من جهاز موثوق، أو بعد الخمول، أو قبل تعديل البيانات الحساسة.</small>
+              <small class="sub-hint">بصفتك الإدارة العليا، يمكنك تغيير أو مسح هذا الرمز فوراً في أي وقت دون المطالبة بالرمز القديم.</small>
             </div>
 
             <div class="form-actions full-width">
@@ -963,14 +1032,14 @@
           </form>
         </section>
 
-        <!-- تبويب التاجر 4: إدارة الموظفين والمناديب -->
+        <!-- تبويب التاجر 4: إدارة الموظفين والمناديب (شامل رؤية وتعديل رمز الـ PIN للموظف) -->
         <section id="mStaffTab" class="tab-panel">
           <div class="panel-header">
             <div class="panel-title">
               <i class="ri-team-line"></i>
               <div>
                 <h2>إدارة الموظفين ومناديب التوصيل</h2>
-                <p class="sub-hint">أنشئ حساب لمندوبك أو موظف التجهيز. الموظف يدخل من نفس البوابة ويشوف الطلبات فقط، ولا يقدر يغير كلمة مروره إلا أنت</p>
+                <p class="sub-hint">أنشئ حساب لمندوبك أو موظف التجهيز، وتفقّد أو عدّل كلمة مروره ورمزه السريع (PIN)</p>
               </div>
             </div>
           </div>
@@ -1013,11 +1082,25 @@
               </div>
             </div>
 
-            <div class="form-group full-width">
-              <label>كلمة مرور الموظف (أنت فقط من يملك صلاحية تغييرها) *</label>
+            <div class="form-group">
+              <label>كلمة مرور الموظف *</label>
               <div class="input-glass-wrap">
                 <i class="ri-lock-password-line"></i>
                 <input type="text" id="mStaffPassword" placeholder="123456" dir="ltr" required>
+                <button type="button" class="toggle-eye-btn" data-target="mStaffPassword" title="إظهار / إخفاء">
+                  <i class="ri-eye-off-line"></i>
+                </button>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>الرمز السريع للموظف (PIN - 4 أرقام أو اتركه فارغاً)</label>
+              <div class="input-glass-wrap">
+                <i class="ri-dialpad-line"></i>
+                <input type="text" id="mStaffPin" maxlength="4" inputmode="numeric" placeholder="اختياري: 4 أرقام" dir="ltr">
+                <button type="button" class="toggle-eye-btn" data-target="mStaffPin" title="إظهار / إخفاء">
+                  <i class="ri-eye-off-line"></i>
+                </button>
               </div>
             </div>
 
@@ -1181,7 +1264,10 @@
               <label>كلمة المرور الجديدة *</label>
               <div class="input-glass-wrap">
                 <i class="ri-lock-line"></i>
-                <input type="text" id="mSelfNewPass" dir="ltr" required>
+                <input type="password" id="mSelfNewPass" dir="ltr" required>
+                <button type="button" class="toggle-eye-btn" data-target="mSelfNewPass" title="إظهار / إخفاء">
+                  <i class="ri-eye-line"></i>
+                </button>
               </div>
             </div>
             <div class="form-group full-width">
@@ -1189,8 +1275,11 @@
               <div class="input-glass-wrap">
                 <i class="ri-dialpad-line"></i>
                 <input type="password" id="mSelfPinInput" maxlength="4" pattern="\d{4}" inputmode="numeric" placeholder="مثال: 2580 (لحماية المتجر من العبث)" dir="ltr">
+                <button type="button" class="toggle-eye-btn" data-target="mSelfPinInput" title="إظهار / إخفاء">
+                  <i class="ri-eye-line"></i>
+                </button>
               </div>
-              <small class="sub-hint">يمنع أي شخص يمسك جوالك من تعديل إعدادات متجرك، ويقفل الشاشة تلقائياً عند الخمول.</small>
+              <small class="sub-hint">يمنع أي شخص يمسك جوالك من تعديل إعدادات متجرك، ويقفل الشاشة تلقائياً عند الخمول. (إذا نسيته، تواصل مع إدارة المنصة لكشفه أو تصفيره لك فوراً).</small>
             </div>
             <div class="form-actions full-width">
               <button type="submit" class="btn-primary-glass">
@@ -1235,7 +1324,7 @@
           </button>
         </nav>
 
-        <!-- تبويب الموظف 1: الطلبات (مزود أيضاً ببحث ذكي سريع للمندوب) -->
+        <!-- تبويب الموظف 1: الطلبات (مزود ببحث ذكي سريع للمندوب) -->
         <section id="staffOrdersTab" class="tab-panel active">
           <div class="panel-header">
             <div class="panel-title">
@@ -1284,6 +1373,9 @@
               <div class="input-glass-wrap">
                 <i class="ri-dialpad-line"></i>
                 <input type="password" id="staffPinInput" maxlength="4" pattern="\d{4}" inputmode="numeric" placeholder="مثال: 1122 (4 أرقام للدخول السريع)" dir="ltr">
+                <button type="button" class="toggle-eye-btn" data-target="staffPinInput" title="إظهار / إخفاء">
+                  <i class="ri-eye-line"></i>
+                </button>
               </div>
             </div>
             <div class="form-actions full-width">
@@ -1314,7 +1406,30 @@
     </div>
   </div>
 
-  <!-- ==================== نافذة التحقق الأمني أو إعداد الرمز السريع (Security Modal) ==================== -->
+  <!-- ==================== 5. نافذة التأكيد الزجاجية الذكية لكل الأزرار التنفيذية (Confirm Modal) ==================== -->
+  <div id="confirmModal" class="modal-overlay hidden">
+    <div class="modal-card glass-panel">
+      <div class="modal-header">
+        <div class="modal-title">
+          <i class="ri-question-answer-fill"></i>
+          <h3 id="confirmModalTitle">تأكيد الإجراء</h3>
+        </div>
+        <button type="button" id="closeConfirmModalBtn" class="icon-close-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p id="confirmModalMessage" class="confirm-msg-text">هل أنت متأكد من تنفيذ هذا الإجراء؟</p>
+        <div class="form-actions" style="justify-content: flex-end; margin-top: 16px;">
+          <button type="button" id="confirmModalNoBtn" class="btn-glass">تراجع / إلغاء</button>
+          <button type="button" id="confirmModalYesBtn" class="btn-primary-glass">
+            <i class="ri-check-double-line"></i>
+            <span id="confirmModalYesText">نعم، متأكد</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 6. نافذة التحقق الأمني أو إعداد الرمز السريع (Security Modal) ==================== -->
   <div id="securityModal" class="modal-overlay hidden">
     <div class="modal-card glass-panel">
       <div class="modal-header">
@@ -1325,10 +1440,10 @@
         <button type="button" id="closeSecModalBtn" class="icon-close-btn">&times;</button>
       </div>
       <div class="modal-body">
-        <p id="secModalDesc" class="sub-hint">أدخل رمز الأمان المكوّن من 4 أرقام لإتمام هذه العملية الحساسة:</p>
+        <p id="secModalDesc" class="sub-hint">أدخل رمز الأمان المكوّن من 4 أرقام لإتمام هذه العملية:</p>
         <div class="input-glass-wrap" style="margin: 12px 0;">
           <i class="ri-dialpad-line"></i>
-          <input type="password" id="secModalPinInput" maxlength="4" inputmode="numeric" placeholder="••••" dir="ltr" style="text-align:center; font-size:1.4rem; letter-spacing:8px;">
+          <input type="text" id="secModalPinInput" maxlength="4" inputmode="numeric" placeholder="••••" dir="ltr" style="text-align:center; font-size:1.4rem; letter-spacing:8px;">
         </div>
         <div class="form-actions" style="justify-content: flex-end;">
           <button type="button" id="secModalCancelBtn" class="btn-glass">تخطي / إلغاء</button>

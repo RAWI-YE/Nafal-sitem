@@ -136,6 +136,38 @@ img {
   border-radius: 16px;
 }
 
+/* ==================== شريط وضع الإدارة العليا الشامل (Impersonation Banner) ==================== */
+.impersonation-banner {
+  background: linear-gradient(135deg, var(--espresso), var(--roast-brown));
+  color: #FFFFFF;
+  padding: 10px 0;
+  position: sticky;
+  top: 0;
+  z-index: 250;
+  box-shadow: 0 6px 20px rgba(30, 19, 13, 0.22);
+}
+
+.impersonation-inner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.imp-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.imp-text i {
+  color: #F5A623;
+  font-size: 1.25rem;
+}
+
 /* ==================== شريط البحث الذكي في الفواتير والطلبات ==================== */
 .smart-search-toolbar {
   padding: 12px 14px;
@@ -813,7 +845,7 @@ img {
   gap: 8px;
 }
 
-/* ==================== النماذج، خزنة الـ API، والأجهزة الموثوقة ==================== */
+/* ==================== النماذج، أيقونة العين، خزنة الـ API، والأجهزة الموثوقة ==================== */
 .accordion-card { overflow: hidden; }
 
 .accordion-trigger {
@@ -861,7 +893,7 @@ img {
 }
 
 .input-glass-wrap:focus-within { background: #FFF; border-color: var(--caramel); }
-.input-glass-wrap i { color: var(--caramel); font-size: 1.15rem; flex-shrink: 0; }
+.input-glass-wrap > i { color: var(--caramel); font-size: 1.15rem; flex-shrink: 0; }
 
 .input-glass-wrap input,
 .input-glass-wrap select,
@@ -875,6 +907,25 @@ img {
   color: var(--espresso);
   outline: none;
   min-width: 0;
+}
+
+/* زر أيقونة العين لإظهار وإخفاء الرموز السرية وكلمات المرور */
+.toggle-eye-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1.2rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  flex-shrink: 0;
+  transition: color 0.15s ease;
+}
+
+.toggle-eye-btn:hover {
+  color: var(--espresso);
 }
 
 .gps-inline-row { display: flex; gap: 8px; }
@@ -1131,31 +1182,32 @@ img {
   gap: 8px;
 }
 
-/* نافذة التحقق بالـ PIN */
+/* ==================== النوافذ المنبثقة: التأكيد الزجاجي الذكي والتحقق بالـ PIN ==================== */
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(30, 19, 13, 0.4);
+  background: rgba(30, 19, 13, 0.42);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 16px;
-  z-index: 2000;
+  z-index: 2500;
 }
 
 .modal-card {
   width: 100%;
-  max-width: 400px;
-  background: rgba(250, 246, 240, 0.97);
+  max-width: 420px;
+  background: rgba(250, 246, 240, 0.98);
   border: 1.5px solid #FFF;
   border-radius: 24px;
   overflow: hidden;
+  box-shadow: 0 20px 50px rgba(30, 19, 13, 0.25);
 }
 
 .modal-header {
-  padding: 14px 18px;
+  padding: 15px 18px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -1163,8 +1215,8 @@ img {
 }
 
 .modal-title { display: flex; align-items: center; gap: 8px; }
-.modal-title i { color: var(--caramel); font-size: 1.3rem; }
-.modal-title h3 { font-size: 1.02rem; font-weight: 900; }
+.modal-title i { color: var(--caramel); font-size: 1.35rem; }
+.modal-title h3 { font-size: 1.05rem; font-weight: 900; color: var(--espresso); }
 
 .icon-close-btn {
   width: 30px;
@@ -1177,6 +1229,13 @@ img {
 }
 
 .modal-body { padding: 18px; }
+
+.confirm-msg-text {
+  font-size: 0.96rem;
+  font-weight: 700;
+  color: var(--roast-brown);
+  line-height: 1.65;
+}
 
 .toast {
   position: fixed;
@@ -1209,4 +1268,5 @@ img {
   .add-cat-row, .gps-inline-row { flex-direction: column; }
   .smart-search-toolbar { flex-direction: column; align-items: stretch; }
   .smart-search-meta { justify-content: flex-end; }
+  .impersonation-inner { flex-direction: column; align-items: flex-start; }
 }

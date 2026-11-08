@@ -1,9 +1,12 @@
+// ============================================================================
+// ملف المحرك الأمني الشامل لبوابة نفال (app.js) — الجزء الأول (1 / 2)
+// ============================================================================
 import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { 
   initializeFirestore, getFirestore, collection, doc, setDoc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, query, where 
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-// 1. إعدادات الاتصال السريع والطبيعي بقاعدة البيانات
+// 1. إعدادات الاتصال بقاعدة بيانات فايربيس
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyAtCSiIDDN9nceKMj2xZbjREy9qXFEv68k",
   authDomain: "rawi-ye02.firebaseapp.com",
@@ -30,13 +33,14 @@ if (getApps().length === 0) {
   db = getFirestore(app);
 }
 
-// متغيرات مفتاح الـ API الديناميكية (تُحدث من خزنة الإدارة العليا حصرياً)
+// متغيرات مفتاح الـ API الديناميكية (تُدار حصرياً من خزنة الإدارة العليا)
 let dynamicImgbbApiKey = DEFAULT_IMGBB_KEY;
 let dynamicUploadEndpoint = DEFAULT_UPLOAD_ENDPOINT;
 
-// متغيرات الجلسة والأمان الحالية
+// متغيرات الجلسة والأمان والصلاحيات
 let currentSession = null; 
-// { role: 'superadmin'|'merchant'|'staff', docId, storeId, username, name, phone, staffRole, pinCode, trustedDevices }
+let isSuperAdminManagingStore = false; // يسمح للأدمن الأعلى بالدخول الكامل لأي متجر وإدارته
+let savedSuperAdminSession = null;
 let activeUnsubscribers = [];
 let enteredPinBuffer = "";
 let isPinLocked = false;
@@ -158,8 +162,72 @@ function clearSubscriptions() {
   activeUnsubscribers = [];
 }
 
+// تفعيل أزرار أيقونة العين (👁️) لإظهار/إخفاء كلمات المرور والرموز السريعة في كل الحقول
+function initPasswordRevealButtons() {
+  document.querySelectorAll(".toggle-eye-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const targetId = btn.dataset.target;
+      const input = document.getElementById(targetId);
+      if (!input) return;
+      const icon = btn.querySelector("i");
+      if (input.type === "password") {
+        input.type = "text";
+        if (icon) icon.className = "ri-eye-off-line";
+      } else {
+        input.type = "password";
+        if (icon) icon.className = "ri-eye-line";
+      }
+    });
+  });
+}
+
 // ============================================================================
-// 2. ضغط ورفع الصور باستخدام مفتاح الـ API الديناميكي المحفوظ في القاعدة
+// 2. نافذة التأكيد الزجاجية الذكية لكل الأزرار التنفيذية (Smart Confirmation Modal)
+// ============================================================================
+let pendingConfirmAction = null;
+
+function confirmAction({ title = "تأكيد الإجراء", message = "هل أنت متأكد من تنفيذ هذا الإجراء؟", confirmText = "نعم، متأكد", isDanger = false, onConfirm }) {
+  const modal = document.getElementById("confirmModal");
+  if (!modal) {
+    if (window.confirm(message)) onConfirm();
+    return;
+  }
+
+  document.getElementById("confirmModalTitle").textContent = title;
+  document.getElementById("confirmModalMessage").textContent = message;
+
+  const yesBtn = document.getElementById("confirmModalYesBtn");
+  const yesText = document.getElementById("confirmModalYesText");
+  if (yesText) yesText.textContent = confirmText;
+
+  if (isDanger) {
+    yesBtn.className = "btn-danger-glass";
+  } else {
+    yesBtn.className = "btn-primary-glass";
+  }
+
+  pendingConfirmAction = onConfirm;
+  modal.classList.remove("hidden");
+}
+
+function closeConfirmModal() {
+  const modal = document.getElementById("confirmModal");
+  if (modal) modal.classList.add("hidden");
+  pendingConfirmAction = null;
+}
+
+document.getElementById("closeConfirmModalBtn")?.addEventListener("click", closeConfirmModal);
+document.getElementById("confirmModalNoBtn")?.addEventListener("click", closeConfirmModal);
+document.getElementById("confirmModalYesBtn")?.addEventListener("click", async () => {
+  const fn = pendingConfirmAction;
+  closeConfirmModal();
+  if (typeof fn === "function") {
+    await fn();
+  }
+});
+
+// ============================================================================
+// 3. ضغط ورفع الصور باستخدام مفتاح الـ API الديناميكي المحفوظ في القاعدة
 // ============================================================================
 function compressImage(file, maxWidth = 850, quality = 0.82) {
   return new Promise((resolve, reject) => {
@@ -227,7 +295,7 @@ async function uploadImageToImgBB(file) {
 }
 
 // ============================================================================
-// 3. تهيئة البيانات الأساسية للمنصة أول مرة
+// 4. تهيئة البيانات الأساسية للمنصة أول مرة
 // ============================================================================
 async function ensurePlatformInitialized() {
   try {
@@ -272,7 +340,7 @@ async function ensurePlatformInitialized() {
 }
 
 // ============================================================================
-// 4. إدارة الشاشات الأربع (تأمين الجلسة / قفل الـ PIN / تسجيل الدخول / البوابة)
+// 5. إدارة الشاشات الأربع والأجهزة الموثوقة
 // ============================================================================
 function showOnlyScreen(screenId) {
   const screens = ["sessionCheckScreen", "pinLockScreen", "loginScreen", "portalApp"];
@@ -352,15 +420,21 @@ function renderTrustedDevicesUI(containerId, devices = [], role, docId) {
     `;
 
     card.querySelector(".revoke-single-btn").addEventListener("click", () => {
-      requirePinVerification(async () => {
-        const updated = devices.filter(d => d.deviceId !== dev.deviceId);
-        const ref = getAccountDocRef(role, docId);
-        if (ref) await updateDoc(ref, { trustedDevices: updated });
-        showToast("تم إلغاء الوثوق بالجهاز بنجاح");
-        if (isCurrent) {
-          performFullLogout();
+      confirmAction({
+        title: "إزالة جهاز موثوق",
+        message: `هل أنت متأكد من إلغاء الوثوق بالجهاز "${dev.deviceName}"؟ سيُطلب منه تسجيل الدخول بكلمة المرور.`,
+        confirmText: "نعم، إزالة الجهاز",
+        isDanger: true,
+        onConfirm: async () => {
+          const updated = devices.filter(d => d.deviceId !== dev.deviceId);
+          const ref = getAccountDocRef(role, docId);
+          if (ref) await updateDoc(ref, { trustedDevices: updated });
+          showToast("تم إلغاء الوثوق بالجهاز بنجاح");
+          if (isCurrent && !isSuperAdminManagingStore) {
+            performFullLogout();
+          }
         }
-      }, "أدخل الرمز السريع لتأكيد إزالة هذا الجهاز الموثوق:");
+      });
     });
 
     container.appendChild(card);
@@ -368,7 +442,7 @@ function renderTrustedDevicesUI(containerId, devices = [], role, docId) {
 }
 
 // ============================================================================
-// 5. نافذة التحقق بالرمز السريع (4-Digit PIN Modal) للعمليات الحساسة
+// 6. نافذة التحقق بالرمز السريع (مع إعفاء الإدارة العليا من قيود الرمز القديم)
 // ============================================================================
 let secModalCallback = null;
 
@@ -390,25 +464,30 @@ function closeSecurityModal() {
   secModalCallback = null;
 }
 
-document.getElementById("closeSecModalBtn").addEventListener("click", closeSecurityModal);
-document.getElementById("secModalCancelBtn").addEventListener("click", closeSecurityModal);
+document.getElementById("closeSecModalBtn")?.addEventListener("click", closeSecurityModal);
+document.getElementById("secModalCancelBtn")?.addEventListener("click", closeSecurityModal);
 
-document.getElementById("secModalConfirmBtn").addEventListener("click", () => {
+document.getElementById("secModalConfirmBtn")?.addEventListener("click", () => {
   const val = normalizeSearchText(document.getElementById("secModalPinInput").value);
   if (typeof secModalCallback === "function") {
     secModalCallback(val);
   }
 });
 
-document.getElementById("secModalPinInput").addEventListener("keydown", (e) => {
+document.getElementById("secModalPinInput")?.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
     e.preventDefault();
     document.getElementById("secModalConfirmBtn").click();
   }
 });
 
-function requirePinVerification(actionFn, customPrompt = "أدخل رمز الدخول السريع (4 أرقام) لتأكيد حفظ التغييرات الحساسة:") {
-  if (!currentSession || !currentSession.pinCode || currentSession.pinCode.length !== 4) {
+// الإدارة العليا معفاة من قيود الرمز القديم حتى لا تُقفل عليها أي صلاحية أبداً
+function requirePinVerification(actionFn, customPrompt = "أدخل رمز الدخول السريع (4 أرقام) لتأكيد العملية:") {
+  if (!currentSession || currentSession.role === "superadmin" || isSuperAdminManagingStore) {
+    actionFn();
+    return;
+  }
+  if (!currentSession.pinCode || currentSession.pinCode.length !== 4) {
     actionFn();
     return;
   }
@@ -422,18 +501,18 @@ function requirePinVerification(actionFn, customPrompt = "أدخل رمز الد
         closeSecurityModal();
         await actionFn();
       } else {
-        showToast("الرمز السريع غير صحيح! لم يتم تنفيذ العملية");
+        showToast("الرمز السريع غير صحيح! إذا نسيته تواصل مع إدارة المنصة");
       }
     }
   });
 }
 
 function offerQuickPinSetupIfMissing() {
-  if (!currentSession || (currentSession.pinCode && currentSession.pinCode.length === 4)) return;
+  if (!currentSession || isSuperAdminManagingStore || (currentSession.pinCode && currentSession.pinCode.length === 4)) return;
 
   openSecurityModal({
     title: "تفعيل رمز الدخول السريع (اختياري)",
-    desc: "هل ترغب في تعيين رمز أمان من 4 أرقام لحماية بوابة متجرك والدخول السريع بدون كلمة مرور؟ (أو اضغط تخطي):",
+    desc: "هل ترغب في تعيين رمز أمان من 4 أرقام لحماية البوابة والدخول السريع بدون كلمة مرور؟ (أو اضغط تخطي):",
     confirmText: "حفظ الرمز",
     onConfirm: async (newPin) => {
       if (!/^\d{4}$/.test(newPin)) {
@@ -454,7 +533,7 @@ function offerQuickPinSetupIfMissing() {
 }
 
 // ============================================================================
-// 6. شاشة القفل بالرمز السريع (PIN Lock Screen) والقفل التلقائي عند الخمول
+// 7. شاشة القفل بالرمز السريع (PIN Lock Screen) والقفل التلقائي عند الخمول
 // ============================================================================
 function updatePinDotsUI(isError = false) {
   const dots = document.querySelectorAll("#pinDotsContainer .pin-dot");
@@ -502,12 +581,12 @@ document.querySelectorAll(".pin-keypad .pin-key[data-digit]").forEach(btn => {
   btn.addEventListener("click", () => handlePinDigitPress(btn.dataset.digit));
 });
 
-document.getElementById("pinClearBtn").addEventListener("click", () => {
+document.getElementById("pinClearBtn")?.addEventListener("click", () => {
   enteredPinBuffer = "";
   updatePinDotsUI(false);
 });
 
-document.getElementById("pinBackBtn").addEventListener("click", () => {
+document.getElementById("pinBackBtn")?.addEventListener("click", () => {
   enteredPinBuffer = enteredPinBuffer.slice(0, -1);
   updatePinDotsUI(false);
 });
@@ -525,11 +604,11 @@ window.addEventListener("keydown", (e) => {
   }
 });
 
-document.getElementById("switchAccountFromPinBtn").addEventListener("click", () => {
+document.getElementById("switchAccountFromPinBtn")?.addEventListener("click", () => {
   performFullLogout();
 });
 
-document.getElementById("quickLockBtn").addEventListener("click", () => {
+document.getElementById("quickLockBtn")?.addEventListener("click", () => {
   triggerPinLockScreen();
 });
 
@@ -553,7 +632,7 @@ function resetIdleTimer() {
 });
 
 // ============================================================================
-// 7. التحقق من الجلسة عند تشغيل البوابة وتسجيل الدخول
+// 8. التحقق من الجلسة، تسجيل الدخول، وميزة الإدارة الشاملة لأي متجر
 // ============================================================================
 function saveSessionLocally(sessionObj) {
   localStorage.setItem("nafal_portal_session", JSON.stringify({
@@ -565,6 +644,7 @@ function saveSessionLocally(sessionObj) {
 }
 
 async function verifySavedSessionOnStartup() {
+  initPasswordRevealButtons();
   showOnlyScreen("sessionCheckScreen");
   await ensurePlatformInitialized();
 
@@ -740,6 +820,39 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
   }
 });
 
+// ميزة دخول الإدارة العليا إلى لوحة أي تاجر لإدارة كل تفاصيله (منتجاته، موظفيه، أقسامه، إعداداته)
+function enterStoreAsSuperAdmin(storeObj) {
+  if (!currentSession || currentSession.role !== "superadmin") return;
+  savedSuperAdminSession = { ...currentSession };
+  isSuperAdminManagingStore = true;
+
+  const banner = document.getElementById("saImpersonationBanner");
+  if (banner) {
+    document.getElementById("saImpersonatedStoreName").textContent = storeObj.name;
+    banner.classList.remove("hidden");
+  }
+
+  openPortalForSession({
+    role: "merchant",
+    docId: storeObj.id,
+    storeId: storeObj.id,
+    username: storeObj.merchantUsername,
+    name: storeObj.name,
+    pinCode: ""
+  }, false);
+
+  showToast(`أنت الآن تدير متجر "${storeObj.name}" بصلاحية الإدارة العليا الشاملة`);
+}
+
+document.getElementById("saExitImpersonationBtn")?.addEventListener("click", () => {
+  if (!savedSuperAdminSession) return;
+  isSuperAdminManagingStore = false;
+  document.getElementById("saImpersonationBanner")?.classList.add("hidden");
+  openPortalForSession(savedSuperAdminSession, false);
+  savedSuperAdminSession = null;
+  showToast("عدت إلى لوحة الإدارة العليا الرئيسية");
+});
+
 function openPortalForSession(sessionData, promptForPinIfMissing = false) {
   currentSession = sessionData;
   isPinLocked = false;
@@ -755,14 +868,16 @@ function openPortalForSession(sessionData, promptForPinIfMissing = false) {
   resetIdleTimer();
 
   if (sessionData.role === "superadmin") {
+    isSuperAdminManagingStore = false;
+    document.getElementById("saImpersonationBanner")?.classList.add("hidden");
     document.getElementById("roleBadge").textContent = "المالك والإدارة العليا";
     document.getElementById("portalTitle").textContent = "البوابة الذكية — نفال";
-    document.getElementById("portalSubtitle").textContent = "الإدارة العليا للسوق، التجار، والاشتراكات — شرورة";
+    document.getElementById("portalSubtitle").textContent = "الإدارة العليا الشاملة للسوق والتجار — شرورة";
     document.getElementById("currentUserDisplay").textContent = sessionData.username;
     document.getElementById("superAdminView").classList.remove("hidden");
     initSuperAdminPortal();
   } else if (sessionData.role === "merchant") {
-    document.getElementById("roleBadge").textContent = "بوابة التاجر";
+    document.getElementById("roleBadge").textContent = isSuperAdminManagingStore ? "إدارة عليا شاملة للمتجر" : "بوابة التاجر";
     document.getElementById("currentUserDisplay").textContent = sessionData.username;
     document.getElementById("merchantView").classList.remove("hidden");
     initMerchantPortal(sessionData.storeId);
@@ -773,7 +888,7 @@ function openPortalForSession(sessionData, promptForPinIfMissing = false) {
     initStaffPortal(sessionData);
   }
 
-  if (promptForPinIfMissing && (!sessionData.pinCode || sessionData.pinCode.length !== 4)) {
+  if (promptForPinIfMissing && !isSuperAdminManagingStore && (!sessionData.pinCode || sessionData.pinCode.length !== 4)) {
     setTimeout(() => offerQuickPinSetupIfMissing(), 600);
   }
 }
@@ -782,14 +897,25 @@ function performFullLogout() {
   clearSubscriptions();
   if (idleLockTimer) clearTimeout(idleLockTimer);
   currentSession = null;
+  savedSuperAdminSession = null;
+  isSuperAdminManagingStore = false;
   isPinLocked = false;
+  document.getElementById("saImpersonationBanner")?.classList.add("hidden");
   localStorage.removeItem("nafal_portal_session");
   document.getElementById("loginForm").reset();
   showOnlyScreen("loginScreen");
   showToast("تم تسجيل الخروج وتأمين البوابة");
 }
 
-document.getElementById("logoutBtn").addEventListener("click", performFullLogout);
+document.getElementById("logoutBtn").addEventListener("click", () => {
+  confirmAction({
+    title: "تأكيد تسجيل الخروج",
+    message: "هل أنت متأكد من رغبتك في تسجيل الخروج من البوابة الآن؟",
+    confirmText: "نعم، تسجيل الخروج",
+    isDanger: true,
+    onConfirm: performFullLogout
+  });
+});
 
 function setupTabNavigation(navBarId, viewContainerId) {
   const navBar = document.getElementById(navBarId);
@@ -812,12 +938,13 @@ setupTabNavigation("mNavBar", "merchantView");
 setupTabNavigation("staffNavBar", "staffView");
 
 // ============================================================================
-// القسم الأول: منطق الإدارة العليا (المالك والأدمن الأعلى - أبو تركي فقط)
+// القسم الأول: منطق الإدارة العليا (المالك والأدمن الأعلى - صلاحيات شاملة)
 // ============================================================================
 let saMarketCategories = ["متاجر القهوة والمحامص", "الأسر المنتجة والحلى", "العسل والسمن والتمور", "العطور والبخور", "متاجر متنوعة"];
 let saAllStores = [];
 let saAllProducts = [];
 let saAllOrders = [];
+let saAllStaff = [];
 let saStoreSearchQuery = "";
 
 function initSuperAdminPortal() {
@@ -879,6 +1006,12 @@ function initSuperAdminPortal() {
     updateSaStatsAndStoresUI();
   });
 
+  const unsubStaff = onSnapshot(collection(db, "nafal_staff"), snap => {
+    saAllStaff = [];
+    snap.forEach(d => saAllStaff.push({ id: d.id, ...d.data() }));
+    updateSaStatsAndStoresUI();
+  });
+
   const unsubNameReqs = onSnapshot(collection(db, "nafal_name_requests"), snap => {
     const reqs = [];
     snap.forEach(d => reqs.push({ id: d.id, ...d.data() }));
@@ -889,10 +1022,9 @@ function initSuperAdminPortal() {
     renderSaNameRequests(reqs);
   });
 
-  activeUnsubscribers.push(unsubAdminDoc, unsubConfig, unsubStores, unsubProds, unsubOrders, unsubNameReqs);
+  activeUnsubscribers.push(unsubAdminDoc, unsubConfig, unsubStores, unsubProds, unsubOrders, unsubStaff, unsubNameReqs);
 }
 
-// البحث الذكي في المتاجر للإدارة العليا
 document.getElementById("saStoreSearchInput").addEventListener("input", (e) => {
   saStoreSearchQuery = e.target.value;
   document.getElementById("saClearStoreSearchBtn").classList.toggle("hidden", !saStoreSearchQuery.trim());
@@ -928,84 +1060,121 @@ function renderSaMarketCategories() {
       <span><i class="ri-store-2-line" style="color:var(--caramel); margin-left:8px;"></i>${escapeHtml(cat)}</span>
       <button type="button" class="btn-danger-glass"><i class="ri-delete-bin-line"></i></button>
     `;
-    li.querySelector("button").addEventListener("click", async () => {
+    li.querySelector("button").addEventListener("click", () => {
       if (saMarketCategories.length <= 1) return showToast("يجب بقاء تصنيف واحد على الأقل");
-      saMarketCategories.splice(idx, 1);
-      await setDoc(doc(db, "nafal_platform", "marketConfig"), { marketCategories: saMarketCategories }, { merge: true });
-      showToast("تم حذف التصنيف");
+      confirmAction({
+        title: "حذف تصنيف من السوق",
+        message: `هل أنت متأكد من حذف تصنيف "${cat}" من السوق الرئيسي؟`,
+        confirmText: "نعم، حذف",
+        isDanger: true,
+        onConfirm: async () => {
+          saMarketCategories.splice(idx, 1);
+          await setDoc(doc(db, "nafal_platform", "marketConfig"), { marketCategories: saMarketCategories }, { merge: true });
+          showToast("تم حذف التصنيف");
+        }
+      });
     });
     list.appendChild(li);
   });
 }
 
-document.getElementById("saAddMarketCatBtn").addEventListener("click", async () => {
+document.getElementById("saAddMarketCatBtn").addEventListener("click", () => {
   const input = document.getElementById("saNewMarketCatInput");
   const val = input.value.trim();
   if (!val) return;
   if (!saMarketCategories.includes(val)) {
-    saMarketCategories.push(val);
-    await setDoc(doc(db, "nafal_platform", "marketConfig"), { marketCategories: saMarketCategories }, { merge: true });
-    input.value = "";
-    showToast("تمت إضافة تصنيف السوق");
+    confirmAction({
+      title: "إضافة تصنيف للسوق",
+      message: `هل تريد إضافة التصنيف "${val}" إلى قائمة تصنيفات سوق شرورة؟`,
+      confirmText: "نعم، إضافة",
+      onConfirm: async () => {
+        saMarketCategories.push(val);
+        await setDoc(doc(db, "nafal_platform", "marketConfig"), { marketCategories: saMarketCategories }, { merge: true });
+        input.value = "";
+        showToast("تمت إضافة تصنيف السوق");
+      }
+    });
   }
 });
 
-document.getElementById("saStoreForm").addEventListener("submit", async (e) => {
+// حفظ أو تعديل المتجر من الإدارة العليا (يشمل الرمز السريع للتاجر، ساعات الدوام، التوصيل، والاشتراك)
+document.getElementById("saStoreForm").addEventListener("submit", (e) => {
   e.preventDefault();
   const editId = document.getElementById("saEditStoreId").value.trim();
   const prefix = document.getElementById("saStorePrefix").value.trim().toUpperCase() || "NF";
+  const pinVal = normalizeSearchText(document.getElementById("saMerchantPin").value);
 
-  const storePayload = {
-    name: document.getElementById("saStoreName").value.trim(),
-    marketCategory: document.getElementById("saStoreCategory").value,
-    invoicePrefix: prefix,
-    whatsappNumber: document.getElementById("saStoreWhatsapp").value.trim(),
-    merchantUsername: document.getElementById("saMerchantUsername").value.trim(),
-    merchantPassword: document.getElementById("saMerchantPassword").value.trim(),
-    subPlan: document.getElementById("saSubPlan").value,
-    subPrice: Number(document.getElementById("saSubPrice").value) || 0,
-    subExpiry: document.getElementById("saSubExpiry").value,
-    storeStatus: document.getElementById("saStoreStatus").value,
-    updatedAt: Date.now()
-  };
-
-  try {
-    if (editId) {
-      await updateDoc(doc(db, "nafal_stores", editId), storePayload);
-      showToast("تم تحديث بيانات المتجر والاشتراك بنجاح");
-    } else {
-      storePayload.createdAt = Date.now();
-      storePayload.description = "متجر معتمد في سوق نفال — شرورة";
-      storePayload.logo = "";
-      storePayload.workMode = "24h";
-      storePayload.openTime = "08:00";
-      storePayload.closeTime = "23:30";
-      storePayload.minOrderAmount = 0;
-      storePayload.baseDeliveryFee = 15;
-      storePayload.enableSmartOffers = true;
-      storePayload.promoMessage = "اطلب بـ 100 ريال والتوصيل بـ 5 ريال! وعند الطلب بـ 300 ريال التوصيل مجاني!";
-      storePayload.tier1Threshold = 100;
-      storePayload.tier1Fee = 5;
-      storePayload.tier2Threshold = 300;
-      storePayload.tier2Fee = 0;
-      storePayload.categories = ["المنتجات المميزة", "بكجات وعروض", "أصناف متنوعة"];
-      storePayload.ratingSum = 5;
-      storePayload.ratingCount = 1;
-      storePayload.pinCode = "";
-      storePayload.trustedDevices = [];
-      await addDoc(collection(db, "nafal_stores"), storePayload);
-      showToast("تم تأسيس المتجر وإنشاء حساب التاجر بنجاح");
-    }
-    resetSaStoreForm();
-  } catch (err) {
-    console.error(err);
-    showToast("حدث خطأ أثناء حفظ المتجر");
+  if (pinVal !== "" && !/^\d{4}$/.test(pinVal)) {
+    showToast("رمز الدخول السريع للتاجر يجب أن يكون 4 أرقام أو اتركه فارغاً لإلغائه");
+    return;
   }
+
+  const storeNameVal = document.getElementById("saStoreName").value.trim();
+
+  confirmAction({
+    title: editId ? "تأكيد تحديث بيانات المتجر" : "تأكيد تأسيس متجر جديد",
+    message: editId
+      ? `هل أنت متأكد من حفظ التعديلات على متجر "${storeNameVal}"؟`
+      : `هل أنت متأكد من تأسيس متجر "${storeNameVal}" ومنح الصلاحية للتاجر؟`,
+    confirmText: "نعم، حفظ واعتماد",
+    onConfirm: async () => {
+      const storePayload = {
+        name: storeNameVal,
+        marketCategory: document.getElementById("saStoreCategory").value,
+        invoicePrefix: prefix,
+        whatsappNumber: document.getElementById("saStoreWhatsapp").value.trim(),
+        merchantUsername: document.getElementById("saMerchantUsername").value.trim(),
+        merchantPassword: document.getElementById("saMerchantPassword").value.trim(),
+        pinCode: pinVal,
+        baseDeliveryFee: Number(document.getElementById("saBaseDeliveryFee").value ?? 15),
+        minOrderAmount: Number(document.getElementById("saMinOrderAmount").value ?? 0),
+        workMode: document.getElementById("saWorkMode").value || "24h",
+        subPlan: document.getElementById("saSubPlan").value,
+        subPrice: Number(document.getElementById("saSubPrice").value) || 0,
+        subExpiry: document.getElementById("saSubExpiry").value,
+        storeStatus: document.getElementById("saStoreStatus").value,
+        updatedAt: Date.now()
+      };
+
+      try {
+        if (editId) {
+          await updateDoc(doc(db, "nafal_stores", editId), storePayload);
+          showToast("تم تحديث بيانات المتجر، الرمز السريع، والاشتراك بنجاح");
+        } else {
+          storePayload.createdAt = Date.now();
+          storePayload.description = "متجر معتمد في سوق نفال — شرورة";
+          storePayload.logo = "";
+          storePayload.openTime = "08:00";
+          storePayload.closeTime = "23:30";
+          storePayload.enableSmartOffers = true;
+          storePayload.promoMessage = "اطلب بـ 100 ريال والتوصيل بـ 5 ريال! وعند الطلب بـ 300 ريال التوصيل مجاني!";
+          storePayload.tier1Threshold = 100;
+          storePayload.tier1Fee = 5;
+          storePayload.tier2Threshold = 300;
+          storePayload.tier2Fee = 0;
+          storePayload.categories = ["المنتجات المميزة", "بكجات وعروض", "أصناف متنوعة"];
+          storePayload.ratingSum = 5;
+          storePayload.ratingCount = 1;
+          storePayload.trustedDevices = [];
+          await addDoc(collection(db, "nafal_stores"), storePayload);
+          showToast("تم تأسيس المتجر وإنشاء حساب التاجر بنجاح");
+        }
+        resetSaStoreForm();
+      } catch (err) {
+        console.error(err);
+        showToast("حدث خطأ أثناء حفظ المتجر");
+      }
+    }
+  });
 });
 
 function resetSaStoreForm() {
   document.getElementById("saStoreForm").reset();
   document.getElementById("saEditStoreId").value = "";
+  document.getElementById("saMerchantPin").value = "";
+  document.getElementById("saBaseDeliveryFee").value = "15";
+  document.getElementById("saMinOrderAmount").value = "0";
+  document.getElementById("saWorkMode").value = "24h";
   document.getElementById("saStoreFormTitle").textContent = "تأسيس متجر جديد ومنح صلاحية لتاجر";
   const nextMonth = new Date();
   nextMonth.setMonth(nextMonth.getMonth() + 1);
@@ -1014,6 +1183,7 @@ function resetSaStoreForm() {
 
 document.getElementById("saResetStoreFormBtn").addEventListener("click", resetSaStoreForm);
 
+// عرض جميع المتاجر مع كشف كامل لبيانات التاجر (الرمز السريع PIN + كلمة المرور + الموظفين + زر الدخول الكامل للمتجر)
 function updateSaStatsAndStoresUI() {
   const todayStr = new Date().toISOString().split("T")[0];
   const activeCount = saAllStores.filter(s => s.storeStatus === "active" && (!s.subExpiry || s.subExpiry >= todayStr)).length;
@@ -1046,6 +1216,12 @@ function updateSaStatsAndStoresUI() {
     const isMaintenance = st.storeStatus === "maintenance" || isExpired;
     const storeProdsCount = saAllProducts.filter(p => p.storeId === st.id).length;
     const storeOrdersCount = saAllOrders.filter(o => o.storeId === st.id).length;
+    const storeStaffList = saAllStaff.filter(sf => sf.storeId === st.id);
+
+    const hasPin = st.pinCode && String(st.pinCode).trim() !== "";
+    const staffSummaryHtml = storeStaffList.length > 0
+      ? storeStaffList.map(sf => `• ${escapeHtml(sf.name)} (${escapeHtml(sf.role)}) — الدخول: <strong dir="ltr">${escapeHtml(sf.username)}</strong> | المرور: <strong dir="ltr">${escapeHtml(sf.password)}</strong> | الرمز (PIN): <strong dir="ltr">${escapeHtml(sf.pinCode || "غير مفعل")}</strong>`).join("<br>")
+      : "لا يوجد موظفون مسجلون في هذا المتجر";
 
     const card = document.createElement("div");
     card.className = "invoice-accordion";
@@ -1059,8 +1235,8 @@ function updateSaStatsAndStoresUI() {
               <span>${escapeHtml(st.name)}</span>
               <small style="color:var(--text-secondary); font-size:0.84rem;">(رمز الفواتير: ${escapeHtml(st.invoicePrefix || "NF")})</small>
             </div>
-            <div class="inv-customer-brief">التصنيف: ${escapeHtml(st.marketCategory || "عام")} | المستخدم: <span dir="ltr">${escapeHtml(st.merchantUsername)}</span></div>
-            <div class="inv-time-brief">المنتجات: ${storeProdsCount} منتج | الطلبات: ${storeOrdersCount} فاتورة</div>
+            <div class="inv-customer-brief">التصنيف: ${escapeHtml(st.marketCategory || "عام")} | المستخدم: <span dir="ltr">${escapeHtml(st.merchantUsername)}</span> | الرمز السريع: <strong style="color:var(--caramel-dark);" dir="ltr">${hasPin ? escapeHtml(st.pinCode) : "غير مفعل"}</strong></div>
+            <div class="inv-time-brief">المنتجات: ${storeProdsCount} منتج | الطلبات: ${storeOrdersCount} فاتورة | الموظفون: ${storeStaffList.length}</div>
           </div>
         </div>
 
@@ -1076,28 +1252,46 @@ function updateSaStatsAndStoresUI() {
       <div class="invoice-details-body">
         <div class="inv-info-grid">
           <div class="inv-box glass-inset">
-            <h4><i class="ri-key-2-line"></i> بيانات دخول التاجر والتواصل</h4>
+            <h4><i class="ri-key-2-line"></i> بيانات دخول التاجر والرمز السريع (4 أرقام)</h4>
             <div><strong>اسم المستخدم:</strong> <span dir="ltr">${escapeHtml(st.merchantUsername)}</span></div>
-            <div><strong>كلمة المرور:</strong> <span dir="ltr">${escapeHtml(st.merchantPassword)}</span></div>
-            <div><strong>واتساب المتجر:</strong> <span dir="ltr">${escapeHtml(st.whatsappNumber)}</span></div>
+            <div><strong>كلمة المرور الأساسية:</strong> <span dir="ltr">${escapeHtml(st.merchantPassword)}</span></div>
+            <div style="margin-top:4px; padding:6px 10px; background:rgba(182,123,72,0.14); border-radius:10px;">
+              <strong>رمز الدخول السريع (PIN):</strong> 
+              <strong style="font-size:1.05rem; color:var(--espresso);" dir="ltr">${hasPin ? escapeHtml(st.pinCode) : "غير مفعل"}</strong>
+            </div>
+            <div style="margin-top:4px;"><strong>واتساب المتجر:</strong> <span dir="ltr">${escapeHtml(st.whatsappNumber)}</span></div>
           </div>
 
           <div class="inv-box glass-inset">
-            <h4><i class="ri-vip-crown-line"></i> تفاصيل الاشتراك</h4>
+            <h4><i class="ri-vip-crown-line"></i> تفاصيل الاشتراك والتشغيل</h4>
             <div><strong>نوع الباقة:</strong> ${escapeHtml(st.subPlan)} (${Number(st.subPrice || 0)} ريال)</div>
             <div><strong>تاريخ الانتهاء:</strong> ${escapeHtml(st.subExpiry || "غير محدد")} ${isExpired ? '<strong style="color:var(--danger);">(منتهي)</strong>' : ''}</div>
-            <div><strong>عدد المنتجات المرفوعة:</strong> ${storeProdsCount} منتج</div>
+            <div><strong>التوصيل الأساسي:</strong> ${Number(st.baseDeliveryFee ?? 15)} ريال | <strong>الحد الأدنى:</strong> ${Number(st.minOrderAmount ?? 0)} ريال</div>
+            <div><strong>الأجهزة الموثوقة المسجلة:</strong> ${(st.trustedDevices || []).length} جهاز</div>
           </div>
         </div>
 
+        <div class="inv-box glass-inset">
+          <h4><i class="ri-team-line"></i> موظفو ومناديب هذا المتجر ورموزهم السرية</h4>
+          <div style="font-size:0.86rem;">${staffSummaryHtml}</div>
+        </div>
+
         <div class="inv-actions-row">
-          <button type="button" class="btn-primary-glass edit-store-btn">
+          <button type="button" class="btn-primary-glass manage-full-store-btn">
+            <i class="ri-dashboard-3-line"></i>
+            <span>الدخول للوحة التاجر وإدارتها بالكامل</span>
+          </button>
+          <button type="button" class="btn-glass edit-store-btn">
             <i class="ri-edit-2-line"></i>
-            <span>تعديل المتجر / تجديد الاشتراك</span>
+            <span>تعديل الحساب / الرمز / الاشتراك</span>
+          </button>
+          <button type="button" class="btn-glass clear-pin-btn">
+            <i class="ri-lock-unlock-line"></i>
+            <span>تصفير أو تغيير رمز الـ PIN</span>
           </button>
           <button type="button" class="btn-glass toggle-maint-btn">
             <i class="ri-tools-line"></i>
-            <span>${st.storeStatus === "maintenance" ? "تفعيل المتجر الآن" : "تحويل إلى تحت الصيانة"}</span>
+            <span>${st.storeStatus === "maintenance" ? "تفعيل المتجر الآن" : "تحويل للصيانة"}</span>
           </button>
           <button type="button" class="btn-danger-glass del-store-btn">
             <i class="ri-delete-bin-line"></i>
@@ -1111,9 +1305,19 @@ function updateSaStatsAndStoresUI() {
       card.classList.toggle("open");
     });
 
+    // دخول الإدارة العليا المباشر للوحة التاجر للتحكم بكل تفاصيله
+    card.querySelector(".manage-full-store-btn").addEventListener("click", () => {
+      confirmAction({
+        title: "الدخول الشامل للوحة التاجر",
+        message: `سيتم فتح لوحة تحكم متجر "${st.name}" بصلاحية الإدارة العليا لتعديل منتجاته أو طلباته أو موظفيه أو هويته مباشرة. هل تود المتابعة؟`,
+        confirmText: "نعم، فتح لوحة المتجر",
+        onConfirm: () => enterStoreAsSuperAdmin(st)
+      });
+    });
+
     card.querySelector(".edit-store-btn").addEventListener("click", () => {
       document.getElementById("saStoreFormAccordion").classList.add("open");
-      document.getElementById("saStoreFormTitle").textContent = `تعديل متجر واشتراك: ${st.name}`;
+      document.getElementById("saStoreFormTitle").textContent = `تعديل شامل لمتجر: ${st.name}`;
       document.getElementById("saEditStoreId").value = st.id;
       document.getElementById("saStoreName").value = st.name;
       document.getElementById("saStoreCategory").value = st.marketCategory || saMarketCategories[0];
@@ -1121,6 +1325,10 @@ function updateSaStatsAndStoresUI() {
       document.getElementById("saStoreWhatsapp").value = st.whatsappNumber || "";
       document.getElementById("saMerchantUsername").value = st.merchantUsername || "";
       document.getElementById("saMerchantPassword").value = st.merchantPassword || "";
+      document.getElementById("saMerchantPin").value = st.pinCode || "";
+      document.getElementById("saBaseDeliveryFee").value = st.baseDeliveryFee ?? 15;
+      document.getElementById("saMinOrderAmount").value = st.minOrderAmount ?? 0;
+      document.getElementById("saWorkMode").value = st.workMode || "24h";
       document.getElementById("saSubPlan").value = st.subPlan || "مجاني";
       document.getElementById("saSubPrice").value = st.subPrice || 0;
       document.getElementById("saSubExpiry").value = st.subExpiry || "";
@@ -1128,19 +1336,50 @@ function updateSaStatsAndStoresUI() {
       window.scrollTo({ top: 0, behavior: "smooth" });
     });
 
-    card.querySelector(".toggle-maint-btn").addEventListener("click", async () => {
+    // زر سريع لتغيير أو إلغاء رمز الـ PIN الخاص بالتاجر لو نسيه
+    card.querySelector(".clear-pin-btn").addEventListener("click", () => {
+      openSecurityModal({
+        title: `تعيين أو مسح رمز التاجر: ${st.name}`,
+        desc: `الرمز الحالي للتاجر هو (${st.pinCode || "غير مفعل"}). اكتب 4 أرقام جديدة لتعيينها له، أو اترك الحقل فارغاً واضغط حفظ لإلغاء الرمز عنه:`,
+        confirmText: "حفظ الرمز للتاجر",
+        onConfirm: async (newMerchantPin) => {
+          if (newMerchantPin !== "" && !/^\d{4}$/.test(newMerchantPin)) {
+            showToast("يجب كتابة 4 أرقام بالضبط أو ترك الحقل فارغاً لإلغاء الرمز");
+            return;
+          }
+          await updateDoc(doc(db, "nafal_stores", st.id), { pinCode: newMerchantPin });
+          closeSecurityModal();
+          showToast(newMerchantPin ? `تم تغيير رمز التاجر إلى: ${newMerchantPin}` : "تم إلغاء الرمز السريع عن التاجر بنجاح");
+        }
+      });
+    });
+
+    card.querySelector(".toggle-maint-btn").addEventListener("click", () => {
       const nextStatus = st.storeStatus === "maintenance" ? "active" : "maintenance";
-      await updateDoc(doc(db, "nafal_stores", st.id), { storeStatus: nextStatus });
-      showToast(nextStatus === "active" ? "تم تفعيل المتجر في السوق" : "تم تحويل المتجر لوضع الصيانة");
+      confirmAction({
+        title: nextStatus === "active" ? "تفعيل المتجر في السوق" : "تحويل المتجر لوضع الصيانة",
+        message: nextStatus === "active"
+          ? `هل أنت متأكد من تفعيل متجر "${st.name}" ليظهر للجمهور؟`
+          : `هل أنت متأكد من تحويل متجر "${st.name}" إلى وضع الصيانة؟`,
+        confirmText: "نعم، تنفيذ",
+        onConfirm: async () => {
+          await updateDoc(doc(db, "nafal_stores", st.id), { storeStatus: nextStatus });
+          showToast(nextStatus === "active" ? "تم تفعيل المتجر في السوق" : "تم تحويل المتجر لوضع الصيانة");
+        }
+      });
     });
 
     card.querySelector(".del-store-btn").addEventListener("click", () => {
-      requirePinVerification(async () => {
-        if (confirm(`هل أنت متأكد من حذف متجر "${st.name}" نهائياً؟`)) {
+      confirmAction({
+        title: "حذف المتجر نهائياً",
+        message: `تحذير: هل أنت متأكد من حذف متجر "${st.name}" نهائياً من قاعدة البيانات؟`,
+        confirmText: "نعم، حذف المتجر",
+        isDanger: true,
+        onConfirm: async () => {
           await deleteDoc(doc(db, "nafal_stores", st.id));
-          showToast("تم حذف المتجر");
+          showToast("تم حذف المتجر نهائياً");
         }
-      }, `أدخل رمز الأمان (4 أرقام) لتأكيد حذف متجر "${st.name}":`);
+      });
     });
 
     container.appendChild(card);
@@ -1189,15 +1428,30 @@ function renderSaNameRequests(requests) {
     `;
 
     if (isPending) {
-      card.querySelector(".approve-btn").addEventListener("click", async () => {
-        await updateDoc(doc(db, "nafal_stores", req.storeId), { name: req.requestedName });
-        await updateDoc(doc(db, "nafal_name_requests", req.id), { status: "approved", resolvedAt: Date.now() });
-        showToast(`تم اعتماد الاسم الجديد: ${req.requestedName}`);
+      card.querySelector(".approve-btn").addEventListener("click", () => {
+        confirmAction({
+          title: "اعتماد الاسم الجديد للمتجر",
+          message: `هل توافق على تغيير اسم المتجر من "${req.oldName}" إلى "${req.requestedName}"؟`,
+          confirmText: "نعم، موافقة واعتماد",
+          onConfirm: async () => {
+            await updateDoc(doc(db, "nafal_stores", req.storeId), { name: req.requestedName });
+            await updateDoc(doc(db, "nafal_name_requests", req.id), { status: "approved", resolvedAt: Date.now() });
+            showToast(`تم اعتماد الاسم الجديد: ${req.requestedName}`);
+          }
+        });
       });
 
-      card.querySelector(".reject-btn").addEventListener("click", async () => {
-        await updateDoc(doc(db, "nafal_name_requests", req.id), { status: "rejected", resolvedAt: Date.now() });
-        showToast("تم رفض طلب تغيير الاسم");
+      card.querySelector(".reject-btn").addEventListener("click", () => {
+        confirmAction({
+          title: "رفض طلب تغيير الاسم",
+          message: `هل أنت متأكد من رفض تغيير اسم المتجر "${req.oldName}"؟`,
+          confirmText: "نعم، رفض الطلب",
+          isDanger: true,
+          onConfirm: async () => {
+            await updateDoc(doc(db, "nafal_name_requests", req.id), { status: "rejected", resolvedAt: Date.now() });
+            showToast("تم رفض طلب تغيير الاسم");
+          }
+        });
       });
     }
 
@@ -1219,6 +1473,7 @@ document.getElementById("saPlatformLogoFile").addEventListener("change", async (
   }
 });
 
+// حفظ إعدادات السوق وخزنة الـ API (فوراً بتأكيد زجاجي وبدون مطالبة بالرمز القديم)
 document.getElementById("saPlatformForm").addEventListener("submit", (e) => {
   e.preventDefault();
   if (!currentSession || currentSession.role !== "superadmin") {
@@ -1226,28 +1481,34 @@ document.getElementById("saPlatformForm").addEventListener("submit", (e) => {
     return;
   }
 
-  requirePinVerification(async () => {
-    const newApiKey = document.getElementById("saImgbbApiKeyInput").value.trim() || DEFAULT_IMGBB_KEY;
-    const newEndpoint = document.getElementById("saUploadEndpointInput").value.trim() || DEFAULT_UPLOAD_ENDPOINT;
+  confirmAction({
+    title: "حفظ إعدادات المنصة وخزنة الـ API",
+    message: "هل أنت متأكد من حفظ التعديلات على هوية السوق ومفتاح رفع الصور؟",
+    confirmText: "نعم، حفظ الإعدادات",
+    onConfirm: async () => {
+      const newApiKey = document.getElementById("saImgbbApiKeyInput").value.trim() || DEFAULT_IMGBB_KEY;
+      const newEndpoint = document.getElementById("saUploadEndpointInput").value.trim() || DEFAULT_UPLOAD_ENDPOINT;
 
-    dynamicImgbbApiKey = newApiKey;
-    dynamicUploadEndpoint = newEndpoint;
+      dynamicImgbbApiKey = newApiKey;
+      dynamicUploadEndpoint = newEndpoint;
 
-    await setDoc(doc(db, "nafal_platform", "marketConfig"), {
-      showMarketplace: document.getElementById("saShowMarketplaceToggle").checked,
-      platformName: document.getElementById("saPlatformName").value.trim(),
-      platformSlogan: document.getElementById("saPlatformSlogan").value.trim(),
-      platformBanner: document.getElementById("saPlatformBanner").value.trim(),
-      platformLogo: document.getElementById("saPlatformLogoUrl").value.trim(),
-      imgbbApiKey: newApiKey,
-      uploadEndpoint: newEndpoint,
-      updatedAt: Date.now()
-    }, { merge: true });
+      await setDoc(doc(db, "nafal_platform", "marketConfig"), {
+        showMarketplace: document.getElementById("saShowMarketplaceToggle").checked,
+        platformName: document.getElementById("saPlatformName").value.trim(),
+        platformSlogan: document.getElementById("saPlatformSlogan").value.trim(),
+        platformBanner: document.getElementById("saPlatformBanner").value.trim(),
+        platformLogo: document.getElementById("saPlatformLogoUrl").value.trim(),
+        imgbbApiKey: newApiKey,
+        uploadEndpoint: newEndpoint,
+        updatedAt: Date.now()
+      }, { merge: true });
 
-    showToast("تم حفظ إعدادات المنصة وخزنة مفتاح الـ API بنجاح");
-  }, "أدخل رمز الأمان (4 أرقام) لتأكيد حفظ إعدادات المنصة ومفتاح الـ API:");
+      showToast("تم حفظ إعدادات المنصة وخزنة مفتاح الـ API بنجاح");
+    }
+  });
 });
 
+// حفظ بيانات دخول الإدارة العليا والرمز السريع مباشرة بدون قيود الرمز القديم
 document.getElementById("saCredentialsForm").addEventListener("submit", (e) => {
   e.preventDefault();
   const newUser = document.getElementById("saAdminNewUser").value.trim();
@@ -1255,38 +1516,51 @@ document.getElementById("saCredentialsForm").addEventListener("submit", (e) => {
   const newPin = normalizeSearchText(document.getElementById("saAdminPinInput").value);
 
   if (newPin !== "" && !/^\d{4}$/.test(newPin)) {
-    showToast("الرمز السريع يجب أن يتكون من 4 أرقام بالضبط أو اتركه فارغاً");
+    showToast("الرمز السريع يجب أن يتكون من 4 أرقام بالضبط أو اتركه فارغاً لإلغائه");
     return;
   }
 
-  requirePinVerification(async () => {
-    await setDoc(doc(db, "nafal_platform", "superAdmin"), {
-      username: newUser,
-      password: newPass,
-      pinCode: newPin,
-      updatedAt: Date.now()
-    }, { merge: true });
+  confirmAction({
+    title: "تحديث بيانات دخول الإدارة العليا",
+    message: "هل أنت متأكد من حفظ اسم المستخدم، كلمة المرور، والرمز السريع الجديد لحسابك؟",
+    confirmText: "نعم، تحديث بياناتي",
+    onConfirm: async () => {
+      await setDoc(doc(db, "nafal_platform", "superAdmin"), {
+        username: newUser,
+        password: newPass,
+        pinCode: newPin,
+        updatedAt: Date.now()
+      }, { merge: true });
 
-    currentSession.username = newUser;
-    currentSession.pinCode = newPin;
-    saveSessionLocally(currentSession);
-    document.getElementById("currentUserDisplay").textContent = newUser;
-    updateQuickLockButtonVisibility();
-    showToast("تم تحديث بيانات الدخول والرمز السريع للإدارة العليا");
-  }, "أدخل رمزك السريع الحالي لتأكيد تعديل بيانات الدخول:");
+      currentSession.username = newUser;
+      currentSession.pinCode = newPin;
+      saveSessionLocally(currentSession);
+      document.getElementById("currentUserDisplay").textContent = newUser;
+      updateQuickLockButtonVisibility();
+      showToast("تم تحديث بيانات الدخول والرمز السريع للإدارة العليا فوراً");
+    }
+  });
 });
 
 document.getElementById("saRevokeAllDevicesBtn").addEventListener("click", () => {
-  requirePinVerification(async () => {
-    await updateDoc(doc(db, "nafal_platform", "superAdmin"), { trustedDevices: [] });
-    showToast("تم إلغاء الوثوق بجميع الأجهزة");
-    performFullLogout();
-  }, "أدخل الرمز السريع لتأكيد إلغاء الوثوق بجميع الأجهزة:");
+  confirmAction({
+    title: "إلغاء الوثوق بجميع الأجهزة",
+    message: "هل أنت متأكد من إزالة جميع الأجهزة الموثوقة المسجلة على حساب الإدارة العليا؟",
+    confirmText: "نعم، إزالة الكل",
+    isDanger: true,
+    onConfirm: async () => {
+      await updateDoc(doc(db, "nafal_platform", "superAdmin"), { trustedDevices: [] });
+      showToast("تم إلغاء الوثوق بجميع الأجهزة");
+      performFullLogout();
+    }
+  });
 });
+// ============================================================================
+// تكملة ملف المحرك الأمني الشامل لبوابة نفال (app.js) — الجزء الثاني (2 / 2)
+// الصق هذا الكود مباشرة أسفل نهاية الجزء الأول
+// ============================================================================
 
-// ============================================================================
 // القسم الثاني: منطق التاجر (Merchant View - صاحب المتجر) + البحث الذكي الفوري
-// ============================================================================
 let mCurrentStore = null;
 let mStoreCategories = ["المنتجات المميزة", "بكجات وعروض", "أصناف متنوعة"];
 let mUploadedImagesList = [];
@@ -1298,7 +1572,7 @@ function initMerchantPortal(storeId) {
   const unsubStore = onSnapshot(doc(db, "nafal_stores", storeId), snap => {
     if (!snap.exists()) return;
     mCurrentStore = { id: snap.id, ...snap.data() };
-    if (currentSession && currentSession.role === "merchant") {
+    if (currentSession && currentSession.role === "merchant" && !isSuperAdminManagingStore) {
       currentSession.pinCode = mCurrentStore.pinCode || "";
       updateQuickLockButtonVisibility();
     }
@@ -1456,58 +1730,77 @@ function renderMerchantUploadedThumbs() {
       <button type="button" title="حذف الصورة">&times;</button>
     `;
     box.querySelector("button").addEventListener("click", () => {
-      mUploadedImagesList.splice(idx, 1);
-      renderMerchantUploadedThumbs();
+      confirmAction({
+        title: "حذف صورة المنتج",
+        message: "هل تريد إزالة هذه الصورة من قائمة صور المنتج؟",
+        confirmText: "نعم، إزالة",
+        isDanger: true,
+        onConfirm: () => {
+          mUploadedImagesList.splice(idx, 1);
+          renderMerchantUploadedThumbs();
+        }
+      });
     });
     row.appendChild(box);
   });
 }
 
-document.getElementById("mProductForm").addEventListener("submit", async (e) => {
+document.getElementById("mProductForm").addEventListener("submit", (e) => {
   e.preventDefault();
   if (!mCurrentStore) return;
 
   const editId = document.getElementById("mEditProductId").value.trim();
-  const images = mUploadedImagesList.length > 0 ? mUploadedImagesList : [DEFAULT_PRODUCT_IMG];
+  const prodNameVal = document.getElementById("mProdName").value.trim();
 
-  const prodData = {
-    storeId: mCurrentStore.id,
-    storeName: mCurrentStore.name,
-    name: document.getElementById("mProdName").value.trim(),
-    productType: document.getElementById("mProdType").value,
-    category: document.getElementById("mProdCategory").value,
-    price: Number(document.getElementById("mProdPrice").value) || 0,
-    oldPrice: Number(document.getElementById("mProdOldPrice").value) || 0,
-    stock: Number(document.getElementById("mProdStock").value) || 0,
-    weight: document.getElementById("mProdWeight").value.trim(),
-    notes: document.getElementById("mProdNotes").value.trim(),
-    description: document.getElementById("mProdDesc").value.trim(),
-    fullDescription: document.getElementById("mProdDesc").value.trim(),
-    imageUrl: images[0],
-    images: images,
-    freeDelivery: document.getElementById("mProdFreeDelivery").checked,
-    updatedAt: Date.now()
-  };
+  confirmAction({
+    title: editId ? "تأكيد تحديث المنتج" : "تأكيد إضافة منتج جديد",
+    message: editId
+      ? `هل أنت متأكد من حفظ التعديلات على المنتج "${prodNameVal}"؟`
+      : `هل أنت متأكد من إضافة المنتج "${prodNameVal}" إلى متجرك؟`,
+    confirmText: "نعم، حفظ المنتج",
+    onConfirm: async () => {
+      const images = mUploadedImagesList.length > 0 ? mUploadedImagesList : [DEFAULT_PRODUCT_IMG];
 
-  const btn = document.getElementById("mSaveProductBtn");
-  btn.disabled = true;
+      const prodData = {
+        storeId: mCurrentStore.id,
+        storeName: mCurrentStore.name,
+        name: prodNameVal,
+        productType: document.getElementById("mProdType").value,
+        category: document.getElementById("mProdCategory").value,
+        price: Number(document.getElementById("mProdPrice").value) || 0,
+        oldPrice: Number(document.getElementById("mProdOldPrice").value) || 0,
+        stock: Number(document.getElementById("mProdStock").value) || 0,
+        weight: document.getElementById("mProdWeight").value.trim(),
+        notes: document.getElementById("mProdNotes").value.trim(),
+        description: document.getElementById("mProdDesc").value.trim(),
+        fullDescription: document.getElementById("mProdDesc").value.trim(),
+        imageUrl: images[0],
+        images: images,
+        freeDelivery: document.getElementById("mProdFreeDelivery").checked,
+        updatedAt: Date.now()
+      };
 
-  try {
-    if (editId) {
-      await updateDoc(doc(db, "nafal_products", editId), prodData);
-      showToast("تم تحديث المنتج بنجاح");
-    } else {
-      prodData.createdAt = Date.now();
-      await addDoc(collection(db, "nafal_products"), prodData);
-      showToast("تمت إضافة المنتج لمتجرك بنجاح");
+      const btn = document.getElementById("mSaveProductBtn");
+      btn.disabled = true;
+
+      try {
+        if (editId) {
+          await updateDoc(doc(db, "nafal_products", editId), prodData);
+          showToast("تم تحديث المنتج بنجاح");
+        } else {
+          prodData.createdAt = Date.now();
+          await addDoc(collection(db, "nafal_products"), prodData);
+          showToast("تمت إضافة المنتج لمتجرك بنجاح");
+        }
+        resetMerchantProductForm();
+      } catch (err) {
+        console.error(err);
+        showToast("حدث خطأ أثناء حفظ المنتج");
+      } finally {
+        btn.disabled = false;
+      }
     }
-    resetMerchantProductForm();
-  } catch (err) {
-    console.error(err);
-    showToast("حدث خطأ أثناء حفظ المنتج");
-  } finally {
-    btn.disabled = false;
-  }
+  });
 });
 
 function resetMerchantProductForm() {
@@ -1579,11 +1872,17 @@ function renderMerchantProducts(prods) {
       window.scrollTo({ top: 0, behavior: "smooth" });
     });
 
-    card.querySelector(".del-btn").addEventListener("click", async () => {
-      if (confirm(`حذف "${p.name}"؟`)) {
-        await deleteDoc(doc(db, "nafal_products", p.id));
-        showToast("تم حذف المنتج");
-      }
+    card.querySelector(".del-btn").addEventListener("click", () => {
+      confirmAction({
+        title: "حذف المنتج من المتجر",
+        message: `هل أنت متأكد من حذف المنتج "${p.name}" نهائياً من متجرك؟`,
+        confirmText: "نعم، حذف المنتج",
+        isDanger: true,
+        onConfirm: async () => {
+          await deleteDoc(doc(db, "nafal_products", p.id));
+          showToast("تم حذف المنتج بنجاح");
+        }
+      });
     });
 
     container.appendChild(card);
@@ -1640,13 +1939,12 @@ function updateMerchantStatsAndOrders() {
   }
 
   filtered.forEach((order, index) => {
-    // فتح الفاتورة تلقائياً إذا كانت نتيجة بحث مباشرة أو طلب جديد في أعلى القائمة
     const shouldOpen = (isSearching && index === 0) || (index === 0 && order.status === "جديد - قيد المراجعة");
     container.appendChild(createOrderAccordionCard(order, shouldOpen, true));
   });
 }
 
-// بناء بطاقة الفاتورة المنسدلة (بدون علامة الهاشتاج #)
+// بناء بطاقة الفاتورة المنسدلة (مع تأكيد ذكي قبل تغيير الحالة أو الحذف)
 function createOrderAccordionCard(order, openByDefault = false, isMerchant = true) {
   const statusMeta = getStatusMeta(order.status);
   const cleanInvoiceNum = (order.invoiceNumber || "").replace(/#/g, "");
@@ -1743,7 +2041,7 @@ function createOrderAccordionCard(order, openByDefault = false, isMerchant = tru
         ${isMerchant ? `
           <button type="button" class="btn-danger-glass del-order-btn">
             <i class="ri-delete-bin-line"></i>
-            <span>حذف</span>
+            <span>حذف الفاتورة</span>
           </button>
         ` : ""}
       </div>
@@ -1760,89 +2058,129 @@ function createOrderAccordionCard(order, openByDefault = false, isMerchant = tru
   });
 
   accordion.querySelectorAll(".status-option-btn").forEach(optBtn => {
-    optBtn.addEventListener("click", async () => {
+    optBtn.addEventListener("click", () => {
       const newStatus = optBtn.dataset.val;
       dropdownWrap.classList.remove("open");
+      if (newStatus === order.status) return;
 
-      const updatePayload = {
-        status: newStatus,
-        updatedAt: Date.now()
-      };
+      confirmAction({
+        title: "تأكيد تغيير حالة الفاتورة",
+        message: `هل أنت متأكد من تغيير حالة الفاتورة (${cleanInvoiceNum}) الخاصة بالعميل "${order.customerName}" إلى "${newStatus}"؟`,
+        confirmText: "نعم، تحديث الحالة",
+        isDanger: newStatus === "ملغي",
+        onConfirm: async () => {
+          const updatePayload = {
+            status: newStatus,
+            updatedAt: Date.now()
+          };
 
-      if (currentSession && currentSession.role === "staff" && newStatus === "مع المندوب للتوصيل") {
-        updatePayload.courierName = currentSession.name;
-        updatePayload.courierPhone = currentSession.phone;
-      }
+          if (currentSession && currentSession.role === "staff" && newStatus === "مع المندوب للتوصيل") {
+            updatePayload.courierName = currentSession.name;
+            updatePayload.courierPhone = currentSession.phone;
+          }
 
-      await updateDoc(doc(db, "nafal_orders", order.id), updatePayload);
-      showToast(`تم تحديث الفاتورة ${cleanInvoiceNum} إلى: ${newStatus}`);
+          await updateDoc(doc(db, "nafal_orders", order.id), updatePayload);
+          showToast(`تم تحديث الفاتورة ${cleanInvoiceNum} إلى: ${newStatus}`);
+        }
+      });
     });
   });
 
   const delBtn = accordion.querySelector(".del-order-btn");
   if (delBtn) {
-    delBtn.addEventListener("click", async () => {
-      if (confirm(`حذف الفاتورة رقم ${cleanInvoiceNum}؟`)) {
-        await deleteDoc(doc(db, "nafal_orders", order.id));
-        showToast("تم حذف الفاتورة");
-      }
+    delBtn.addEventListener("click", () => {
+      confirmAction({
+        title: "حذف الفاتورة نهائياً",
+        message: `هل أنت متأكد من حذف الفاتورة رقم (${cleanInvoiceNum}) نهائياً من السجل؟`,
+        confirmText: "نعم، حذف الفاتورة",
+        isDanger: true,
+        onConfirm: async () => {
+          await deleteDoc(doc(db, "nafal_orders", order.id));
+          showToast("تم حذف الفاتورة");
+        }
+      });
     });
   }
 
   return accordion;
 }
 
-document.getElementById("mWorkOffersForm").addEventListener("submit", async (e) => {
+document.getElementById("mWorkOffersForm").addEventListener("submit", (e) => {
   e.preventDefault();
   if (!mCurrentStore) return;
 
-  await updateDoc(doc(db, "nafal_stores", mCurrentStore.id), {
-    workMode: document.getElementById("mWorkMode").value,
-    openTime: document.getElementById("mOpenTime").value,
-    closeTime: document.getElementById("mCloseTime").value,
-    invoicePrefix: document.getElementById("mInvoicePrefix").value.trim().toUpperCase() || "NF",
-    minOrderAmount: Number(document.getElementById("mMinOrderAmount").value) || 0,
-    baseDeliveryFee: Number(document.getElementById("mBaseDeliveryFee").value) || 0,
-    enableSmartOffers: document.getElementById("mEnableSmartOffers").checked,
-    promoMessage: document.getElementById("mPromoMessage").value.trim(),
-    tier1Threshold: Number(document.getElementById("mTier1Threshold").value) || 100,
-    tier1Fee: Number(document.getElementById("mTier1Fee").value) || 0,
-    tier2Threshold: Number(document.getElementById("mTier2Threshold").value) || 300,
-    tier2Fee: Number(document.getElementById("mTier2Fee").value) || 0,
-    updatedAt: Date.now()
-  });
+  confirmAction({
+    title: "حفظ أوقات الدوام وعروض التوصيل",
+    message: "هل أنت متأكد من حفظ التغييرات على ساعات الدوام والحد الأدنى ورسوم التوصيل لمتجرك؟",
+    confirmText: "نعم، حفظ الإعدادات",
+    onConfirm: async () => {
+      await updateDoc(doc(db, "nafal_stores", mCurrentStore.id), {
+        workMode: document.getElementById("mWorkMode").value,
+        openTime: document.getElementById("mOpenTime").value,
+        closeTime: document.getElementById("mCloseTime").value,
+        invoicePrefix: document.getElementById("mInvoicePrefix").value.trim().toUpperCase() || "NF",
+        minOrderAmount: Number(document.getElementById("mMinOrderAmount").value) || 0,
+        baseDeliveryFee: Number(document.getElementById("mBaseDeliveryFee").value) || 0,
+        enableSmartOffers: document.getElementById("mEnableSmartOffers").checked,
+        promoMessage: document.getElementById("mPromoMessage").value.trim(),
+        tier1Threshold: Number(document.getElementById("mTier1Threshold").value) || 100,
+        tier1Fee: Number(document.getElementById("mTier1Fee").value) || 0,
+        tier2Threshold: Number(document.getElementById("mTier2Threshold").value) || 300,
+        tier2Fee: Number(document.getElementById("mTier2Fee").value) || 0,
+        updatedAt: Date.now()
+      });
 
-  showToast("تم حفظ أوقات الدوام وعروض التوصيل لمتجرك");
+      showToast("تم حفظ أوقات الدوام وعروض التوصيل لمتجرك");
+    }
+  });
 });
 
-document.getElementById("mStaffForm").addEventListener("submit", async (e) => {
+// إدارة الموظفين والمناديب (شاملة رؤية وتعديل الرمز السريع PIN للموظف)
+document.getElementById("mStaffForm").addEventListener("submit", (e) => {
   e.preventDefault();
   if (!mCurrentStore) return;
 
   const editStaffId = document.getElementById("mEditStaffId").value.trim();
-  const payload = {
-    storeId: mCurrentStore.id,
-    storeName: mCurrentStore.name,
-    name: document.getElementById("mStaffName").value.trim(),
-    phone: document.getElementById("mStaffPhone").value.trim(),
-    role: document.getElementById("mStaffRole").value,
-    username: document.getElementById("mStaffUsername").value.trim(),
-    password: document.getElementById("mStaffPassword").value.trim(),
-    updatedAt: Date.now()
-  };
+  const staffNameVal = document.getElementById("mStaffName").value.trim();
+  const staffPinVal = normalizeSearchText(document.getElementById("mStaffPin")?.value || "");
 
-  if (editStaffId) {
-    await updateDoc(doc(db, "nafal_staff", editStaffId), payload);
-    showToast("تم تحديث بيانات الموظف");
-  } else {
-    payload.createdAt = Date.now();
-    payload.pinCode = "";
-    payload.trustedDevices = [];
-    await addDoc(collection(db, "nafal_staff"), payload);
-    showToast("تمت إضافة الموظف بنجاح");
+  if (staffPinVal !== "" && !/^\d{4}$/.test(staffPinVal)) {
+    showToast("رمز الدخول السريع للموظف يجب أن يكون 4 أرقام أو اتركه فارغاً");
+    return;
   }
-  document.getElementById("mStaffForm").reset();
-  document.getElementById("mEditStaffId").value = "";
+
+  confirmAction({
+    title: editStaffId ? "تأكيد تحديث بيانات الموظف" : "تأكيد إضافة موظف جديد",
+    message: editStaffId
+      ? `هل أنت متأكد من حفظ التعديلات على حساب الموظف "${staffNameVal}"؟`
+      : `هل أنت متأكد من إنشاء حساب للموظف/المندوب "${staffNameVal}"؟`,
+    confirmText: "نعم، حفظ الموظف",
+    onConfirm: async () => {
+      const payload = {
+        storeId: mCurrentStore.id,
+        storeName: mCurrentStore.name,
+        name: staffNameVal,
+        phone: document.getElementById("mStaffPhone").value.trim(),
+        role: document.getElementById("mStaffRole").value,
+        username: document.getElementById("mStaffUsername").value.trim(),
+        password: document.getElementById("mStaffPassword").value.trim(),
+        pinCode: staffPinVal,
+        updatedAt: Date.now()
+      };
+
+      if (editStaffId) {
+        await updateDoc(doc(db, "nafal_staff", editStaffId), payload);
+        showToast("تم تحديث بيانات الموظف ورمزه السريع");
+      } else {
+        payload.createdAt = Date.now();
+        payload.trustedDevices = [];
+        await addDoc(collection(db, "nafal_staff"), payload);
+        showToast("تمت إضافة الموظف بنجاح");
+      }
+      document.getElementById("mStaffForm").reset();
+      document.getElementById("mEditStaffId").value = "";
+    }
+  });
 });
 
 document.getElementById("mResetStaffBtn").addEventListener("click", () => {
@@ -1871,10 +2209,15 @@ function renderMerchantStaff(staffList) {
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
         <div>
           <strong style="font-size:1.04rem;">${escapeHtml(sf.name)} (${escapeHtml(sf.role)})</strong>
-          <div class="sub-hint">جوال: <span dir="ltr">${escapeHtml(sf.phone)}</span> | اسم الدخول: <strong dir="ltr">${escapeHtml(sf.username)}</strong> | كلمة المرور: <strong dir="ltr">${escapeHtml(sf.password)}</strong></div>
+          <div class="sub-hint">
+            جوال: <span dir="ltr">${escapeHtml(sf.phone)}</span> | 
+            اسم الدخول: <strong dir="ltr">${escapeHtml(sf.username)}</strong> | 
+            كلمة المرور: <strong dir="ltr">${escapeHtml(sf.password)}</strong> | 
+            الرمز السريع (PIN): <strong style="color:var(--caramel-dark);" dir="ltr">${escapeHtml(sf.pinCode || "غير مفعل")}</strong>
+          </div>
         </div>
         <div style="display:flex; gap:8px;">
-          <button type="button" class="btn-glass edit-sf-btn"><i class="ri-edit-line"></i> تعديل</button>
+          <button type="button" class="btn-glass edit-sf-btn"><i class="ri-edit-line"></i> تعديل / تغيير الرمز</button>
           <button type="button" class="btn-danger-glass del-sf-btn"><i class="ri-delete-bin-line"></i></button>
         </div>
       </div>
@@ -1887,36 +2230,66 @@ function renderMerchantStaff(staffList) {
       document.getElementById("mStaffRole").value = sf.role;
       document.getElementById("mStaffUsername").value = sf.username;
       document.getElementById("mStaffPassword").value = sf.password;
+      const pinField = document.getElementById("mStaffPin");
+      if (pinField) pinField.value = sf.pinCode || "";
       window.scrollTo({ top: 0, behavior: "smooth" });
     });
 
-    card.querySelector(".del-sf-btn").addEventListener("click", async () => {
-      if (confirm(`حذف حساب الموظف "${sf.name}"؟`)) {
-        await deleteDoc(doc(db, "nafal_staff", sf.id));
-        showToast("تم حذف الموظف");
-      }
+    card.querySelector(".del-sf-btn").addEventListener("click", () => {
+      confirmAction({
+        title: "حذف حساب الموظف",
+        message: `هل أنت متأكد من حذف حساب الموظف "${sf.name}" نهائياً؟`,
+        confirmText: "نعم، حذف الموظف",
+        isDanger: true,
+        onConfirm: async () => {
+          await deleteDoc(doc(db, "nafal_staff", sf.id));
+          showToast("تم حذف الموظف");
+        }
+      });
     });
 
     container.appendChild(card);
   });
 }
 
-document.getElementById("mSendNameRequestBtn").addEventListener("click", async () => {
+document.getElementById("mSendNameRequestBtn").addEventListener("click", () => {
   if (!mCurrentStore) return;
   const newName = document.getElementById("mRequestedStoreName").value.trim();
   if (!newName) return showToast("اكتب الاسم الجديد المقترح أولاً");
 
-  await addDoc(collection(db, "nafal_name_requests"), {
-    storeId: mCurrentStore.id,
-    oldName: mCurrentStore.name,
-    requestedName: newName,
-    status: "pending",
-    createdAt: Date.now()
-  });
+  // إذا كان الأدمن الأعلى هو من يدير المتجر حالياً، يتغير الاسم فوراً بدون انتظار
+  if (isSuperAdminManagingStore) {
+    confirmAction({
+      title: "تغيير فوري لاسم المتجر (صلاحية الإدارة العليا)",
+      message: `بصفتك الإدارة العليا، هل تريد تغيير اسم المتجر فوراً إلى "${newName}"؟`,
+      confirmText: "نعم، تغيير الاسم فوراً",
+      onConfirm: async () => {
+        await updateDoc(doc(db, "nafal_stores", mCurrentStore.id), { name: newName });
+        document.getElementById("mRequestedStoreName").value = "";
+        showToast(`تم تغيير اسم المتجر فوراً إلى: ${newName}`);
+      }
+    });
+    return;
+  }
 
-  document.getElementById("mRequestedStoreName").value = "";
-  document.getElementById("mPendingNameHint").textContent = `تم إرسال طلب تغيير الاسم إلى "${newName}" للمراجعة.`;
-  showToast("تم إرسال طلب تغيير الاسم للمراجعة");
+  confirmAction({
+    title: "إرسال طلب تغيير اسم المتجر",
+    message: `هل تريد رفع طلب رسمي لتغيير اسم متجرك إلى "${newName}" لمراجعته من إدارة المنصة؟`,
+    confirmText: "نعم، إرسال الطلب",
+    onConfirm: async () => {
+      await addDoc(collection(db, "nafal_name_requests"), {
+        storeId: mCurrentStore.id,
+        oldName: mCurrentStore.name,
+        requestedName: newName,
+        status: "pending",
+        createdAt: Date.now()
+      });
+
+      document.getElementById("mRequestedStoreName").value = "";
+      document.getElementById("mPendingNameHint").textContent = `تم إرسال طلب تغيير الاسم إلى "${newName}" للمراجعة.`;
+      showToast("تم إرسال طلب تغيير الاسم للمراجعة");
+    }
+  });
 });
 
 document.getElementById("mLogoFileInput").addEventListener("change", async (e) => {
@@ -1948,22 +2321,29 @@ document.getElementById("mCaptureGpsBtn").addEventListener("click", () => {
   });
 });
 
-document.getElementById("mIdentityForm").addEventListener("submit", async (e) => {
+document.getElementById("mIdentityForm").addEventListener("submit", (e) => {
   e.preventDefault();
   if (!mCurrentStore) return;
 
-  await updateDoc(doc(db, "nafal_stores", mCurrentStore.id), {
-    description: document.getElementById("mStoreDescInput").value.trim(),
-    logo: document.getElementById("mStoreLogoUrl").value.trim(),
-    whatsappNumber: document.getElementById("mWhatsappInput").value.trim(),
-    mapsUrl: document.getElementById("mMapsUrlInput").value.trim(),
-    snapchatUrl: document.getElementById("mSnapInput").value.trim(),
-    tiktokUrl: document.getElementById("mTiktokInput").value.trim(),
-    instagramUrl: document.getElementById("mInstaInput").value.trim(),
-    updatedAt: Date.now()
-  });
+  confirmAction({
+    title: "حفظ هوية المتجر وموقع المحل",
+    message: "هل أنت متأكد من حفظ التعديلات على الشعار والوصف وأرقام التواصل وموقع المحل؟",
+    confirmText: "نعم، حفظ الهوية",
+    onConfirm: async () => {
+      await updateDoc(doc(db, "nafal_stores", mCurrentStore.id), {
+        description: document.getElementById("mStoreDescInput").value.trim(),
+        logo: document.getElementById("mStoreLogoUrl").value.trim(),
+        whatsappNumber: document.getElementById("mWhatsappInput").value.trim(),
+        mapsUrl: document.getElementById("mMapsUrlInput").value.trim(),
+        snapchatUrl: document.getElementById("mSnapInput").value.trim(),
+        tiktokUrl: document.getElementById("mTiktokInput").value.trim(),
+        instagramUrl: document.getElementById("mInstaInput").value.trim(),
+        updatedAt: Date.now()
+      });
 
-  showToast("تم حفظ هوية متجرك وموقع المحل بنجاح");
+      showToast("تم حفظ هوية متجرك وموقع المحل بنجاح");
+    }
+  });
 });
 
 function renderMerchantCategories() {
@@ -1984,26 +2364,41 @@ function renderMerchantCategories() {
       <span><i class="ri-price-tag-3-line" style="color:var(--caramel); margin-left:8px;"></i>${escapeHtml(cat)}</span>
       <button type="button" class="btn-danger-glass"><i class="ri-delete-bin-line"></i></button>
     `;
-    li.querySelector("button").addEventListener("click", async () => {
+    li.querySelector("button").addEventListener("click", () => {
       if (mStoreCategories.length <= 1) return showToast("يجب بقاء قسم واحد على الأقل");
-      mStoreCategories.splice(idx, 1);
-      await updateDoc(doc(db, "nafal_stores", mCurrentStore.id), { categories: mStoreCategories });
-      showToast("تم حذف القسم");
+      confirmAction({
+        title: "حذف قسم من المتجر",
+        message: `هل أنت متأكد من حذف القسم "${cat}" من متجرك؟`,
+        confirmText: "نعم، حذف القسم",
+        isDanger: true,
+        onConfirm: async () => {
+          mStoreCategories.splice(idx, 1);
+          await updateDoc(doc(db, "nafal_stores", mCurrentStore.id), { categories: mStoreCategories });
+          showToast("تم حذف القسم");
+        }
+      });
     });
     list.appendChild(li);
   });
 }
 
-document.getElementById("mAddCatBtn").addEventListener("click", async () => {
+document.getElementById("mAddCatBtn").addEventListener("click", () => {
   if (!mCurrentStore) return;
   const input = document.getElementById("mNewCatInput");
   const val = input.value.trim();
   if (!val) return;
   if (!mStoreCategories.includes(val)) {
-    mStoreCategories.push(val);
-    await updateDoc(doc(db, "nafal_stores", mCurrentStore.id), { categories: mStoreCategories });
-    input.value = "";
-    showToast("تمت إضافة القسم لمتجرك");
+    confirmAction({
+      title: "إضافة قسم جديد للمتجر",
+      message: `هل تريد إضافة القسم "${val}" إلى أقسام متجرك؟`,
+      confirmText: "نعم، إضافة",
+      onConfirm: async () => {
+        mStoreCategories.push(val);
+        await updateDoc(doc(db, "nafal_stores", mCurrentStore.id), { categories: mStoreCategories });
+        input.value = "";
+        showToast("تمت إضافة القسم لمتجرك");
+      }
+    });
   }
 });
 
@@ -2019,29 +2414,44 @@ document.getElementById("mCredentialsForm").addEventListener("submit", (e) => {
     return;
   }
 
-  requirePinVerification(async () => {
-    await updateDoc(doc(db, "nafal_stores", mCurrentStore.id), {
-      merchantUsername: newUser,
-      merchantPassword: newPass,
-      pinCode: newPin
-    });
+  confirmAction({
+    title: "تحديث بيانات الأمان والرمز السريع",
+    message: "هل أنت متأكد من حفظ التعديلات على اسم المستخدم وكلمة المرور والرمز السريع؟",
+    confirmText: "نعم، حفظ التعديلات",
+    onConfirm: () => {
+      requirePinVerification(async () => {
+        await updateDoc(doc(db, "nafal_stores", mCurrentStore.id), {
+          merchantUsername: newUser,
+          merchantPassword: newPass,
+          pinCode: newPin
+        });
 
-    currentSession.username = newUser;
-    currentSession.pinCode = newPin;
-    saveSessionLocally(currentSession);
-    document.getElementById("currentUserDisplay").textContent = newUser;
-    updateQuickLockButtonVisibility();
-    showToast("تم تحديث بيانات الأمان والرمز السريع لمتجرك");
-  }, "أدخل رمزك السريع الحالي لتأكيد تعديل بيانات الأمان:");
+        if (!isSuperAdminManagingStore) {
+          currentSession.username = newUser;
+          currentSession.pinCode = newPin;
+          saveSessionLocally(currentSession);
+          document.getElementById("currentUserDisplay").textContent = newUser;
+          updateQuickLockButtonVisibility();
+        }
+        showToast("تم تحديث بيانات الأمان والرمز السريع للمتجر");
+      }, "أدخل رمزك السريع الحالي لتأكيد تعديل بيانات الأمان:");
+    }
+  });
 });
 
 document.getElementById("mRevokeAllDevicesBtn").addEventListener("click", () => {
   if (!mCurrentStore) return;
-  requirePinVerification(async () => {
-    await updateDoc(doc(db, "nafal_stores", mCurrentStore.id), { trustedDevices: [] });
-    showToast("تم إلغاء الوثوق بجميع الأجهزة المسجلة على متجرك");
-    performFullLogout();
-  }, "أدخل الرمز السريع لتأكيد إلغاء الوثوق بجميع الأجهزة:");
+  confirmAction({
+    title: "إلغاء الوثوق بجميع أجهزة المتجر",
+    message: "هل أنت متأكد من إزالة جميع الأجهزة الموثوقة المسجلة على هذا المتجر؟",
+    confirmText: "نعم، إزالة الكل",
+    isDanger: true,
+    onConfirm: async () => {
+      await updateDoc(doc(db, "nafal_stores", mCurrentStore.id), { trustedDevices: [] });
+      showToast("تم إلغاء الوثوق بجميع الأجهزة المسجلة على المتجر");
+      if (!isSuperAdminManagingStore) performFullLogout();
+    }
+  });
 });
 
 // ============================================================================
@@ -2138,22 +2548,33 @@ document.getElementById("staffPinForm").addEventListener("submit", (e) => {
     return;
   }
 
-  requirePinVerification(async () => {
-    await updateDoc(doc(db, "nafal_staff", currentSession.docId), { pinCode: newPin });
-    currentSession.pinCode = newPin;
-    saveSessionLocally(currentSession);
-    updateQuickLockButtonVisibility();
-    showToast("تم حفظ الرمز السريع الخاص بك بنجاح");
-  }, "أدخل رمزك السريع الحالي لتأكيد التعديل:");
+  confirmAction({
+    title: "حفظ الرمز السريع للمندوب",
+    message: "هل أنت متأكد من حفظ الرمز السريع الجديد الخاص بك؟",
+    confirmText: "نعم، حفظ الرمز",
+    onConfirm: async () => {
+      await updateDoc(doc(db, "nafal_staff", currentSession.docId), { pinCode: newPin });
+      currentSession.pinCode = newPin;
+      saveSessionLocally(currentSession);
+      updateQuickLockButtonVisibility();
+      showToast("تم حفظ الرمز السريع الخاص بك بنجاح");
+    }
+  });
 });
 
 document.getElementById("staffRevokeAllDevicesBtn").addEventListener("click", () => {
   if (!currentSession || currentSession.role !== "staff") return;
-  requirePinVerification(async () => {
-    await updateDoc(doc(db, "nafal_staff", currentSession.docId), { trustedDevices: [] });
-    showToast("تم إلغاء الوثوق بجميع أجهزتك");
-    performFullLogout();
-  }, "أدخل الرمز السريع لتأكيد إلغاء الوثوق بجميع الأجهزة:");
+  confirmAction({
+    title: "إلغاء الوثوق بجميع أجهزتك",
+    message: "هل أنت متأكد من إزالة جميع أجهزتك الموثوقة وتسجيل الخروج؟",
+    confirmText: "نعم، إزالة الكل",
+    isDanger: true,
+    onConfirm: async () => {
+      await updateDoc(doc(db, "nafal_staff", currentSession.docId), { trustedDevices: [] });
+      showToast("تم إلغاء الوثوق بجميع أجهزتك");
+      performFullLogout();
+    }
+  });
 });
 
 // بدء تشغيل البوابة عبر شاشة فحص وتأمين الجلسة الذكية

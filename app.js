@@ -39,13 +39,13 @@ let dynamicUploadEndpoint = DEFAULT_UPLOAD_ENDPOINT;
 
 // متغيرات الجلسة والأمان والصلاحيات
 let currentSession = null; 
-let isSuperAdminManagingStore = false; // يسمح للأدمن الأعلى بالدخول الكامل لأي متجر وإدارته
+let isSuperAdminManagingStore = false;
 let savedSuperAdminSession = null;
 let activeUnsubscribers = [];
 let enteredPinBuffer = "";
 let isPinLocked = false;
 let idleLockTimer = null;
-const IDLE_LOCK_TIMEOUT_MS = 5 * 60 * 1000; // قفل تلقائي بعد 5 دقائق خمول
+const IDLE_LOCK_TIMEOUT_MS = 5 * 60 * 1000;
 
 // حماية النصوص من ثغرات XSS
 function escapeHtml(str) {
@@ -70,7 +70,49 @@ function normalizeSearchText(str) {
     .trim();
 }
 
-// دالة الفحص الذكي للفاتورة (تطابق رقم الفاتورة، الجوال، آخر 4 أرقام، الاسم، العنوان، أو المنتجات)
+// ============================================================================
+// حارس تفرد اسم المستخدم الشامل (Global Username Uniqueness Guard)
+// يمنع تكرار اسم المستخدم في كل النظام دون كشف صاحب الاسم، ويتيح الاسم إذا حُذف صاحبه
+// ============================================================================
+async function isUsernameTakenGlobally(candidateUsername, excludeRole = null, excludeDocId = null) {
+  const cleanCandidate = (candidateUsername || "").trim().toLowerCase();
+  if (!cleanCandidate) return true;
+
+  // 1. فحص وثيقة الإدارة العليا
+  if (!(excludeRole === "superadmin" && excludeDocId === "superAdmin")) {
+    const adminSnap = await getDoc(doc(db, "nafal_platform", "superAdmin"));
+    if (adminSnap.exists()) {
+      const adminUser = (adminSnap.data().username || "").trim().toLowerCase();
+      if (adminUser && adminUser === cleanCandidate) {
+        return true;
+      }
+    }
+  }
+
+  // 2. فحص جميع المتاجر النشطة في القاعدة
+  const storesSnap = await getDocs(collection(db, "nafal_stores"));
+  for (const docSnap of storesSnap.docs) {
+    if (excludeRole === "merchant" && docSnap.id === excludeDocId) continue;
+    const storeUser = (docSnap.data().merchantUsername || "").trim().toLowerCase();
+    if (storeUser && storeUser === cleanCandidate) {
+      return true;
+    }
+  }
+
+  // 3. فحص جميع الموظفين والمناديب النشطين في القاعدة
+  const staffSnap = await getDocs(collection(db, "nafal_staff"));
+  for (const docSnap of staffSnap.docs) {
+    if (excludeRole === "staff" && docSnap.id === excludeDocId) continue;
+    const staffUser = (docSnap.data().username || "").trim().toLowerCase();
+    if (staffUser && staffUser === cleanCandidate) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+// دالة الفحص الذكي للفاتورة
 function matchesSmartOrderQuery(order, rawQuery) {
   if (!rawQuery || !rawQuery.trim()) return true;
 
@@ -152,7 +194,7 @@ function showToast(msg) {
   toastText.textContent = msg;
   toast.classList.remove("hidden");
   if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toast.classList.add("hidden"), 3000);
+  toastTimer = setTimeout(() => toast.classList.add("hidden"), 3200);
 }
 
 function clearSubscriptions() {
@@ -162,7 +204,7 @@ function clearSubscriptions() {
   activeUnsubscribers = [];
 }
 
-// تفعيل أزرار أيقونة العين (👁️) لإظهار/إخفاء كلمات المرور والرموز السريعة في كل الحقول
+// تفعيل أزرار أيقونة العين (👁️) لإظهار/إخفاء كلمات المرور والرموز السريعة
 function initPasswordRevealButtons() {
   document.querySelectorAll(".toggle-eye-btn").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -481,7 +523,6 @@ document.getElementById("secModalPinInput")?.addEventListener("keydown", (e) => 
   }
 });
 
-// الإدارة العليا معفاة من قيود الرمز القديم حتى لا تُقفل عليها أي صلاحية أبداً
 function requirePinVerification(actionFn, customPrompt = "أدخل رمز الدخول السريع (4 أرقام) لتأكيد العملية:") {
   if (!currentSession || currentSession.role === "superadmin" || isSuperAdminManagingStore) {
     actionFn();
@@ -737,7 +778,7 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
     const adminSnap = await getDoc(doc(db, "nafal_platform", "superAdmin"));
     if (adminSnap.exists()) {
       const adminData = adminSnap.data();
-      if ((adminData.username || "").toLowerCase() === userIn.toLowerCase() && adminData.password === passIn) {
+      if ((adminData.username || "").trim().toLowerCase() === userIn.toLowerCase() && adminData.password === passIn) {
         if (trustDevice) {
           await registerTrustedDeviceInDb("superadmin", "superAdmin", adminData.trustedDevices || []);
         }
@@ -759,7 +800,7 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
     let matchedStore = null;
     storesSnap.forEach(docSnap => {
       const st = docSnap.data();
-      if ((st.merchantUsername || "").toLowerCase() === userIn.toLowerCase() && st.merchantPassword === passIn) {
+      if ((st.merchantUsername || "").trim().toLowerCase() === userIn.toLowerCase() && st.merchantPassword === passIn) {
         matchedStore = { id: docSnap.id, ...st };
       }
     });
@@ -786,7 +827,7 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
     let matchedStaff = null;
     staffSnap.forEach(docSnap => {
       const sf = docSnap.data();
-      if ((sf.username || "").toLowerCase() === userIn.toLowerCase() && sf.password === passIn) {
+      if ((sf.username || "").trim().toLowerCase() === userIn.toLowerCase() && sf.password === passIn) {
         matchedStaff = { id: docSnap.id, ...sf };
       }
     });
@@ -820,7 +861,7 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
   }
 });
 
-// ميزة دخول الإدارة العليا إلى لوحة أي تاجر لإدارة كل تفاصيله (منتجاته، موظفيه، أقسامه، إعداداته)
+// ميزة دخول الإدارة العليا إلى لوحة أي تاجر لإدارة كل تفاصيله
 function enterStoreAsSuperAdmin(storeObj) {
   if (!currentSession || currentSession.role !== "superadmin") return;
   savedSuperAdminSession = { ...currentSession };
@@ -1097,15 +1138,23 @@ document.getElementById("saAddMarketCatBtn").addEventListener("click", () => {
   }
 });
 
-// حفظ أو تعديل المتجر من الإدارة العليا (يشمل الرمز السريع للتاجر، ساعات الدوام، التوصيل، والاشتراك)
-document.getElementById("saStoreForm").addEventListener("submit", (e) => {
+// حفظ أو تعديل المتجر من الإدارة العليا (مع فحص عدم تكرار اسم المستخدم في كل النظام)
+document.getElementById("saStoreForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const editId = document.getElementById("saEditStoreId").value.trim();
   const prefix = document.getElementById("saStorePrefix").value.trim().toUpperCase() || "NF";
   const pinVal = normalizeSearchText(document.getElementById("saMerchantPin").value);
+  const candidateUser = document.getElementById("saMerchantUsername").value.trim();
 
   if (pinVal !== "" && !/^\d{4}$/.test(pinVal)) {
     showToast("رمز الدخول السريع للتاجر يجب أن يكون 4 أرقام أو اتركه فارغاً لإلغائه");
+    return;
+  }
+
+  // فحص عدم تكرار اسم المستخدم مع أي حساب آخر في القاعدة
+  const isTaken = await isUsernameTakenGlobally(candidateUser, "merchant", editId || null);
+  if (isTaken) {
+    showToast("اسم المستخدم هذا محجوز ومستخدم حالياً، يرجى اختيار اسم آخر");
     return;
   }
 
@@ -1123,7 +1172,7 @@ document.getElementById("saStoreForm").addEventListener("submit", (e) => {
         marketCategory: document.getElementById("saStoreCategory").value,
         invoicePrefix: prefix,
         whatsappNumber: document.getElementById("saStoreWhatsapp").value.trim(),
-        merchantUsername: document.getElementById("saMerchantUsername").value.trim(),
+        merchantUsername: candidateUser,
         merchantPassword: document.getElementById("saMerchantPassword").value.trim(),
         pinCode: pinVal,
         baseDeliveryFee: Number(document.getElementById("saBaseDeliveryFee").value ?? 15),
@@ -1183,7 +1232,7 @@ function resetSaStoreForm() {
 
 document.getElementById("saResetStoreFormBtn").addEventListener("click", resetSaStoreForm);
 
-// عرض جميع المتاجر مع كشف كامل لبيانات التاجر (الرمز السريع PIN + كلمة المرور + الموظفين + زر الدخول الكامل للمتجر)
+// عرض جميع المتاجر مع كشف كامل لبيانات التاجر والموظفين
 function updateSaStatsAndStoresUI() {
   const todayStr = new Date().toISOString().split("T")[0];
   const activeCount = saAllStores.filter(s => s.storeStatus === "active" && (!s.subExpiry || s.subExpiry >= todayStr)).length;
@@ -1305,7 +1354,6 @@ function updateSaStatsAndStoresUI() {
       card.classList.toggle("open");
     });
 
-    // دخول الإدارة العليا المباشر للوحة التاجر للتحكم بكل تفاصيله
     card.querySelector(".manage-full-store-btn").addEventListener("click", () => {
       confirmAction({
         title: "الدخول الشامل للوحة التاجر",
@@ -1336,7 +1384,6 @@ function updateSaStatsAndStoresUI() {
       window.scrollTo({ top: 0, behavior: "smooth" });
     });
 
-    // زر سريع لتغيير أو إلغاء رمز الـ PIN الخاص بالتاجر لو نسيه
     card.querySelector(".clear-pin-btn").addEventListener("click", () => {
       openSecurityModal({
         title: `تعيين أو مسح رمز التاجر: ${st.name}`,
@@ -1369,15 +1416,19 @@ function updateSaStatsAndStoresUI() {
       });
     });
 
+    // عند حذف متجر، يتم حذف موظفيه أيضاً لتحرير أسماء المستخدمين الخاصة بهم
     card.querySelector(".del-store-btn").addEventListener("click", () => {
       confirmAction({
         title: "حذف المتجر نهائياً",
-        message: `تحذير: هل أنت متأكد من حذف متجر "${st.name}" نهائياً من قاعدة البيانات؟`,
+        message: `تحذير: هل أنت متأكد من حذف متجر "${st.name}" وموظفيه نهائياً من قاعدة البيانات؟`,
         confirmText: "نعم، حذف المتجر",
         isDanger: true,
         onConfirm: async () => {
+          for (const sf of storeStaffList) {
+            await deleteDoc(doc(db, "nafal_staff", sf.id));
+          }
           await deleteDoc(doc(db, "nafal_stores", st.id));
-          showToast("تم حذف المتجر نهائياً");
+          showToast("تم حذف المتجر وتحرير أسماء المستخدمين المرتبطة به");
         }
       });
     });
@@ -1473,7 +1524,6 @@ document.getElementById("saPlatformLogoFile").addEventListener("change", async (
   }
 });
 
-// حفظ إعدادات السوق وخزنة الـ API (فوراً بتأكيد زجاجي وبدون مطالبة بالرمز القديم)
 document.getElementById("saPlatformForm").addEventListener("submit", (e) => {
   e.preventDefault();
   if (!currentSession || currentSession.role !== "superadmin") {
@@ -1508,8 +1558,8 @@ document.getElementById("saPlatformForm").addEventListener("submit", (e) => {
   });
 });
 
-// حفظ بيانات دخول الإدارة العليا والرمز السريع مباشرة بدون قيود الرمز القديم
-document.getElementById("saCredentialsForm").addEventListener("submit", (e) => {
+// حفظ بيانات دخول الإدارة العليا مع فحص عدم تكرار اسم المستخدم في النظام
+document.getElementById("saCredentialsForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const newUser = document.getElementById("saAdminNewUser").value.trim();
   const newPass = document.getElementById("saAdminNewPass").value.trim();
@@ -1517,6 +1567,12 @@ document.getElementById("saCredentialsForm").addEventListener("submit", (e) => {
 
   if (newPin !== "" && !/^\d{4}$/.test(newPin)) {
     showToast("الرمز السريع يجب أن يتكون من 4 أرقام بالضبط أو اتركه فارغاً لإلغائه");
+    return;
+  }
+
+  const isTaken = await isUsernameTakenGlobally(newUser, "superadmin", "superAdmin");
+  if (isTaken) {
+    showToast("اسم المستخدم هذا محجوز ومستخدم حالياً، يرجى اختيار اسم آخر");
     return;
   }
 
@@ -2135,17 +2191,25 @@ document.getElementById("mWorkOffersForm").addEventListener("submit", (e) => {
   });
 });
 
-// إدارة الموظفين والمناديب (شاملة رؤية وتعديل الرمز السريع PIN للموظف)
-document.getElementById("mStaffForm").addEventListener("submit", (e) => {
+// إدارة الموظفين والمناديب (مع فحص عدم تكرار اسم المستخدم في كل النظام)
+document.getElementById("mStaffForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!mCurrentStore) return;
 
   const editStaffId = document.getElementById("mEditStaffId").value.trim();
   const staffNameVal = document.getElementById("mStaffName").value.trim();
+  const candidateStaffUser = document.getElementById("mStaffUsername").value.trim();
   const staffPinVal = normalizeSearchText(document.getElementById("mStaffPin")?.value || "");
 
   if (staffPinVal !== "" && !/^\d{4}$/.test(staffPinVal)) {
     showToast("رمز الدخول السريع للموظف يجب أن يكون 4 أرقام أو اتركه فارغاً");
+    return;
+  }
+
+  // فحص عدم تكرار اسم المستخدم مع الإدارة أو التجار أو أي موظف آخر
+  const isTaken = await isUsernameTakenGlobally(candidateStaffUser, "staff", editStaffId || null);
+  if (isTaken) {
+    showToast("اسم المستخدم هذا محجوز ومستخدم حالياً، يرجى اختيار اسم آخر");
     return;
   }
 
@@ -2162,7 +2226,7 @@ document.getElementById("mStaffForm").addEventListener("submit", (e) => {
         name: staffNameVal,
         phone: document.getElementById("mStaffPhone").value.trim(),
         role: document.getElementById("mStaffRole").value,
-        username: document.getElementById("mStaffUsername").value.trim(),
+        username: candidateStaffUser,
         password: document.getElementById("mStaffPassword").value.trim(),
         pinCode: staffPinVal,
         updatedAt: Date.now()
@@ -2238,12 +2302,12 @@ function renderMerchantStaff(staffList) {
     card.querySelector(".del-sf-btn").addEventListener("click", () => {
       confirmAction({
         title: "حذف حساب الموظف",
-        message: `هل أنت متأكد من حذف حساب الموظف "${sf.name}" نهائياً؟`,
+        message: `هل أنت متأكد من حذف حساب الموظف "${sf.name}" نهائياً؟ (سيصبح اسم المستخدم متاحاً من جديد)`,
         confirmText: "نعم، حذف الموظف",
         isDanger: true,
         onConfirm: async () => {
           await deleteDoc(doc(db, "nafal_staff", sf.id));
-          showToast("تم حذف الموظف");
+          showToast("تم حذف الموظف وتحرير اسم المستخدم");
         }
       });
     });
@@ -2257,7 +2321,6 @@ document.getElementById("mSendNameRequestBtn").addEventListener("click", () => {
   const newName = document.getElementById("mRequestedStoreName").value.trim();
   if (!newName) return showToast("اكتب الاسم الجديد المقترح أولاً");
 
-  // إذا كان الأدمن الأعلى هو من يدير المتجر حالياً، يتغير الاسم فوراً بدون انتظار
   if (isSuperAdminManagingStore) {
     confirmAction({
       title: "تغيير فوري لاسم المتجر (صلاحية الإدارة العليا)",
@@ -2402,7 +2465,8 @@ document.getElementById("mAddCatBtn").addEventListener("click", () => {
   }
 });
 
-document.getElementById("mCredentialsForm").addEventListener("submit", (e) => {
+// تحديث بيانات دخول التاجر والرمز السريع (مع فحص عدم تكرار اسم المستخدم في كل النظام)
+document.getElementById("mCredentialsForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!mCurrentStore) return;
   const newUser = document.getElementById("mSelfNewUser").value.trim();
@@ -2411,6 +2475,12 @@ document.getElementById("mCredentialsForm").addEventListener("submit", (e) => {
 
   if (newPin !== "" && !/^\d{4}$/.test(newPin)) {
     showToast("الرمز السريع يجب أن يتكون من 4 أرقام بالضبط أو اتركه فارغاً");
+    return;
+  }
+
+  const isTaken = await isUsernameTakenGlobally(newUser, "merchant", mCurrentStore.id);
+  if (isTaken) {
+    showToast("اسم المستخدم هذا محجوز ومستخدم حالياً، يرجى اختيار اسم آخر");
     return;
   }
 
